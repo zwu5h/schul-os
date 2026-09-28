@@ -1,41 +1,111 @@
 import { WebUntis } from "webuntis";
 import { z } from "zod";
 import { normalizeWebUntisLessons } from "@/providers/school";
+import {
+  MAX_BODY_BYTES,
+  SCHOOL_SEARCH_TIMEOUT_MS,
+  WEBUNTIS_TIMEOUT_MS,
+  classifyTimetableError,
+  normalizeSchool,
+  normalizeServer,
+  normalizeUsername,
+  searchSchools,
+  withTimeout,
+} from "@/lib/webuntis";
+
 export const runtime = "nodejs";
-const input = z.object({
-  server: z
-    .string()
-    .trim()
-    .min(4)
-    .max(80)
-    .regex(
-      /^[a-z0-9.-]+\.[a-z]{2,}$/i,
-      "Server ungültig, z. B. mese.webuntis.com.",
-    ),
-  school: z.string().trim().min(1).max(80),
-  username: z.string().trim().min(1).max(80),
+
+const timetableInput = z.object({
+  server: z.string().min(1).max(200),
+  school: z.string().min(1).max(200),
+  username: z.string().min(1).max(80),
   password: z.string().min(1).max(200),
   days: z.number().int().min(1).max(14).default(7),
 });
-const requests: number[] = [];
-export async function POST(request: Request) {
+
+const timetableRequests: number[] = [];
+const searchRequests: number[] = [];
+
+function limited(bucket: number[], max: number): boolean {
+  const now = Date.now();
+  while (bucket.length && bucket[0] < now - 60000) bucket.shift();
+  if (bucket.length >= max) return true;
+  bucket.push(now);
+  return false;
+}
+
+/** Gleicher Same-Origin-Schutz wie /api/chat, aber ohne dessen
+ * Localhost-Bindung: Hier reisen fremde Zugangsdaten, kein Server-Geheimnis.
+ */
+function sameOrigin(request: Request): boolean {
   const host = request.headers.get("host") || "";
   const origin = request.headers.get("origin");
-  // Anders als /api/chat nutzt diese Route kein Server-Geheimnis, sondern die
-  // Zugangsdaten der anfragenden Person. Trotzdem: kein Cross-Site-Zugriff.
-  if (
-    (origin && origin !== `http://${host}` && origin !== `https://${host}`) ||
-    request.headers.get("sec-fetch-site") === "cross-site"
-  )
+  if (request.headers.get("sec-fetch-site") === "cross-site") return false;
+  if (!origin) return true;
+  return origin === `http://${host}` || origin === `https://${host}`;
+}
+
+function tooLarge(request: Request, body: string): boolean {
+  return Number(request.headers.get("content-length") || 0) > MAX_BODY_BYTES ||
+    body.length > MAX_BODY_BYTES;
+}
+
+/** Öffentliche Schulsuche ohne Login: liefert Server + Schulkürzel. */
+export async function GET(request: Request) {
+  if (!sameOrigin(request))
     return Response.json({ error: "Anfrage abgelehnt." }, { status: 403 });
-  if (Number(request.headers.get("content-length") || 0) > 8000)
-    return Response.json({ error: "Die Anfrage ist zu groß." }, { status: 413 });
+  const query =
+    new URL(request.url).searchParams.get("q")?.trim() ?? "";
+  if (query.length < 2 || query.length > 80)
+    return Response.json(
+      { error: "Bitte mindestens 2 Zeichen für die Schulsuche eingeben." },
+      { status: 400 },
+    );
+  if (limited(searchRequests, 15))
+    return Response.json(
+      { error: "Bitte warte eine Minute vor der nächsten Anfrage." },
+      { status: 429 },
+    );
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), SCHOOL_SEARCH_TIMEOUT_MS);
+  try {
+    const { schools, tooMany } = await searchSchools(query, abort.signal);
+    if (tooMany)
+      return Response.json(
+        { error: "Zu viele Schulen gefunden. Bitte Suche eingrenzen." },
+        { status: 400 },
+      );
+    return Response.json({ schools });
+  } catch (error) {
+    if (error instanceof Error && /abort/i.test(error.name))
+      return Response.json(
+        { error: "Die Schulsuche antwortet nicht. Bitte erneut versuchen." },
+        { status: 504 },
+      );
+    return Response.json(
+      { error: "Die Schulsuche ist nicht erreichbar. Bitte erneut versuchen." },
+      { status: 502 },
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Stundenplan mit den Zugangsdaten der anfragenden Person abrufen.
+ * Das Passwort lebt nur in dieser Anfrage und wird nie gespeichert.
+ */
+export async function POST(request: Request) {
+  if (!sameOrigin(request))
+    return Response.json({ error: "Anfrage abgelehnt." }, { status: 403 });
   const body = await request.text();
-  if (body.length > 8000)
-    return Response.json({ error: "Die Anfrage ist zu groß." }, { status: 413 });
+  if (tooLarge(request, body))
+    return Response.json(
+      { error: "Die Anfrage ist zu groß." },
+      { status: 413 },
+    );
   let parsed;
   try {
-    parsed = input.safeParse(JSON.parse(body));
+    parsed = timetableInput.safeParse(JSON.parse(body));
   } catch {
     return Response.json({ error: "Ungültige Anfrage." }, { status: 400 });
   }
@@ -44,45 +114,39 @@ export async function POST(request: Request) {
       { error: "Bitte Server, Schule, Benutzer und Passwort prüfen." },
       { status: 400 },
     );
-  const now = Date.now();
-  while (requests.length && requests[0] < now - 60000) requests.shift();
-  if (requests.length >= 10)
+  // Eingefügte URLs ("https://…/WebUntis/?school=…") auf Host + Kürzel
+  // zurückführen, bevor irgendetwas validiert oder verbunden wird.
+  const server = normalizeServer(parsed.data.server);
+  const school = normalizeSchool(parsed.data.school);
+  const username = normalizeUsername(parsed.data.username);
+  if (!server || !school || !username)
+    return Response.json(
+      { error: "Bitte Server, Schule, Benutzer und Passwort prüfen." },
+      { status: 400 },
+    );
+  if (limited(timetableRequests, 10))
     return Response.json(
       { error: "Bitte warte eine Minute vor der nächsten Anfrage." },
       { status: 429 },
     );
-  requests.push(now);
-  const { server, school, username, password, days } = parsed.data;
+  const { password, days } = parsed.data;
   const untis = new WebUntis(school, username, password, server);
-  const timeout = (ms: number) =>
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("Zeitüberschreitung.")), ms),
-    );
   try {
-    await Promise.race([untis.login(), timeout(20000)]);
+    await withTimeout(untis.login(), WEBUNTIS_TIMEOUT_MS);
     try {
       const start = new Date();
       const end = new Date();
       end.setDate(end.getDate() + days - 1);
-      const periods = await Promise.race([
+      const periods = await withTimeout(
         untis.getOwnTimetableForRange(start, end),
-        timeout(20000),
-      ]);
+        WEBUNTIS_TIMEOUT_MS,
+      );
       return Response.json({ lessons: normalizeWebUntisLessons(periods) });
     } finally {
-      await untis.logout().catch(() => {});
+      await withTimeout(untis.logout(), 8000).catch(() => {});
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-    // Zugangsdaten oder Passwort niemals in Fehlermeldungen zurückgeben.
-    if (/bad credentials|failed to login|unauthor|forbidden|login/i.test(message))
-      return Response.json(
-        { error: "Schule, Benutzer oder Passwort wurde nicht akzeptiert." },
-        { status: 401 },
-      );
-    return Response.json(
-      { error: "WebUntis ist nicht erreichbar. Server prüfen und erneut versuchen." },
-      { status: 502 },
-    );
+    const failure = classifyTimetableError(error);
+    return Response.json({ error: failure.error }, { status: failure.status });
   }
 }

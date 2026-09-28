@@ -5,6 +5,7 @@ import { entries, clear } from "idb-keyval";
 import { useWorkspace } from "@/lib/store";
 import { entity, type Lesson } from "@/types/school";
 import { parseTimetableJson, type TimetableEntry } from "@/providers/school";
+import type { SchoolSuggestion } from "@/lib/webuntis";
 import { isCloudEnabled, useAuth } from "@/lib/auth";
 import { useSync } from "@/lib/sync";
 import { emptyWorkspace, demoWorkspace } from "@/lib/demo";
@@ -288,15 +289,35 @@ export function WebUntis() {
   const [text, setText] = useState("");
   const [fileName, setFileName] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
+  const [liveErrors, setLiveErrors] = useState<string[]>([]);
   const [preview, setPreview] = useState<TimetableEntry[] | null>(null);
   const [replace, setReplace] = useState(true);
   const [done, setDone] = useState("");
-  const [server, setServer] = useState("");
-  const [schoolName, setSchoolName] = useState("");
-  const [username, setUsername] = useState("");
+  const [savedConnection] = useState(() => {
+    if (typeof localStorage === "undefined")
+      return { server: "", school: "", username: "" };
+    try {
+      const data = JSON.parse(
+        localStorage.getItem("webuntis-connection") || "{}",
+      );
+      return {
+        server: typeof data.server === "string" ? data.server : "",
+        school: typeof data.school === "string" ? data.school : "",
+        username: typeof data.username === "string" ? data.username : "",
+      };
+    } catch {
+      return { server: "", school: "", username: "" };
+    }
+  });
+  const [server, setServer] = useState(savedConnection.server);
+  const [schoolName, setSchoolName] = useState(savedConnection.school);
+  const [username, setUsername] = useState(savedConnection.username);
   const [password, setPassword] = useState("");
   const [days, setDays] = useState(7);
   const [fetching, setFetching] = useState(false);
+  const [search, setSearch] = useState("");
+  const [schools, setSchools] = useState<SchoolSuggestion[]>([]);
+  const [searching, setSearching] = useState(false);
   const imported = w.lessons.filter((l) => l.source === "webuntis");
   const unknown = preview
     ? [
@@ -323,6 +344,49 @@ export function WebUntis() {
     setPreview(result.entries);
     setDone("");
   }
+  async function searchSchool() {
+    const query = search.trim();
+    if (query.length < 2) {
+      setLiveErrors([
+        "Bitte mindestens 2 Zeichen für die Schulsuche eingeben.",
+      ]);
+      return;
+    }
+    setSearching(true);
+    setLiveErrors([]);
+    setDone("");
+    try {
+      const res = await fetch(
+        `/api/webuntis?q=${encodeURIComponent(query)}`,
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLiveErrors([
+          typeof data.error === "string"
+            ? data.error
+            : "Schulsuche fehlgeschlagen.",
+        ]);
+        setSchools([]);
+        return;
+      }
+      const list = Array.isArray(data.schools) ? data.schools : [];
+      setSchools(list as SchoolSuggestion[]);
+      if (!list.length)
+        setLiveErrors(["Keine Schule gefunden. Bitte Schreibweise prüfen."]);
+    } catch {
+      setLiveErrors(["Die Schulsuche ist nicht erreichbar."]);
+      setSchools([]);
+    } finally {
+      setSearching(false);
+    }
+  }
+  function selectSchool(school: SchoolSuggestion) {
+    setServer(school.server);
+    setSchoolName(school.loginName);
+    setSearch(school.displayName);
+    setSchools([]);
+    setLiveErrors([]);
+  }
   async function fetchLive() {
     if (
       !server.trim() ||
@@ -330,12 +394,14 @@ export function WebUntis() {
       !username.trim() ||
       !password
     ) {
-      setErrors(["Bitte Server, Schule, Benutzer und Passwort ausfüllen."]);
+      setLiveErrors([
+        "Bitte Server, Schule, Benutzer und Passwort ausfüllen.",
+      ]);
       setPreview(null);
       return;
     }
     setFetching(true);
-    setErrors([]);
+    setLiveErrors([]);
     setDone("");
     try {
       const res = await fetch("/api/webuntis", {
@@ -351,7 +417,7 @@ export function WebUntis() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setErrors([
+        setLiveErrors([
           typeof data.error === "string"
             ? data.error
             : "Abruf fehlgeschlagen.",
@@ -361,13 +427,28 @@ export function WebUntis() {
       }
       const entries = Array.isArray(data.lessons) ? data.lessons : [];
       if (!entries.length) {
-        setErrors(["Keine Stunden im Zeitraum gefunden."]);
+        setLiveErrors([
+          "Keine Stunden im Zeitraum gefunden. An Wochenenden oder in den Ferien ist das normal – ggf. einen längeren Zeitraum wählen.",
+        ]);
         setPreview(null);
         return;
       }
+      // Nur Server, Kürzel und Benutzer merken – nie das Passwort.
+      try {
+        localStorage.setItem(
+          "webuntis-connection",
+          JSON.stringify({
+            server: server.trim(),
+            school: schoolName.trim(),
+            username: username.trim(),
+          }),
+        );
+      } catch {
+        /* Browserspeicher voll oder blockiert: Abruf gilt trotzdem. */
+      }
       setPreview(entries as TimetableEntry[]);
     } catch {
-      setErrors(["WebUntis ist nicht erreichbar."]);
+      setLiveErrors(["WebUntis ist nicht erreichbar."]);
       setPreview(null);
     } finally {
       setFetching(false);
@@ -433,11 +514,11 @@ export function WebUntis() {
           {w.profile.grade || "Keine Klasse eingetragen"}
         </p>
         <p>
-          Kein Live-Zugang: Diese App fragt keine WebUntis-Passwörter ab und
-          speichert keine. Stattdessen importierst du deinen Stundenplan als
-          JSON-Datei – einmalig, lokal, jederzeit widerrufbar durch Löschen
-          der Stunden. Ein Live-Adapter folgt erst nach Prüfung der von
-          deiner Schule freigegebenen API.
+          Verbinde deinen echten Stundenplan: Entweder live aus WebUntis
+          abrufen oder einmalig als JSON importieren. Das WebUntis-Passwort
+          bleibt nur im Arbeitsspeicher dieser Sitzung und wird nie
+          gespeichert. Übernommene Stunden lassen sich jederzeit wieder
+          löschen.
         </p>
         <span className="pill">
           {imported.length
@@ -493,10 +574,54 @@ export function WebUntis() {
       <div className="panel settings-panel">
         <h2>Live aus WebUntis abrufen</h2>
         <p>
-          Mit deinen WebUntis-Zugangsdaten. Das Passwort bleibt nur in
-          dieser Sitzung im Arbeitsspeicher und wird nie gespeichert.
+          Schritt 1: Schule suchen und übernehmen – so stimmen Server und
+          Schulkürzel garantiert. Schritt 2: mit deinen
+          WebUntis-Zugangsdaten abrufen. Das Passwort bleibt nur in dieser
+          Sitzung im Arbeitsspeicher und wird nie gespeichert.
         </p>
         <div className="form">
+          <div className="field">
+            <label htmlFor="live-search">Schule suchen</label>
+            <input
+              id="live-search"
+              value={search}
+              maxLength={80}
+              placeholder="z. B. BRG Musterstadt"
+              autoComplete="off"
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void searchSchool();
+                }
+              }}
+            />
+          </div>
+          <button
+            className="button"
+            disabled={searching}
+            onClick={() => void searchSchool()}
+          >
+            {searching ? "Sucht …" : "Schule suchen"}
+          </button>
+          {schools.length > 0 && (
+            <ul className="school-results">
+              {schools.map((s) => (
+                <li key={`${s.server}/${s.loginName}`}>
+                  <button
+                    className="button"
+                    onClick={() => selectSchool(s)}
+                  >
+                    {s.displayName}
+                    <small className="muted">
+                      {s.address ? `${s.address} · ` : ""}
+                      {s.server} · {s.loginName}
+                    </small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           <div className="field">
             <label htmlFor="live-server">Server</label>
             <input
@@ -515,7 +640,7 @@ export function WebUntis() {
                 id="live-school"
                 value={schoolName}
                 maxLength={80}
-                placeholder="Schulkürzel"
+                placeholder="Wird per Schulsuche ausgefüllt"
                 autoComplete="off"
                 onChange={(e) => setSchoolName(e.target.value)}
               />
@@ -561,6 +686,13 @@ export function WebUntis() {
           >
             {fetching ? "Rufe ab …" : "Abrufen und prüfen"}
           </button>
+          {liveErrors.length > 0 && (
+            <ul className="muted" role="alert">
+              {liveErrors.map((err) => (
+                <li key={err}>{err}</li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
       <div className="panel settings-panel">

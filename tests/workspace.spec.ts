@@ -435,6 +435,42 @@ test("live timetable fetch shows auth errors", async ({ page }) => {
   ).toContainText("nicht akzeptiert");
 });
 
+test("school search fills server and school identifier", async ({ page }) => {
+  await page.route("**/api/webuntis*", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        schools: [
+          {
+            server: "mese.webuntis.com",
+            loginName: "brg-muster",
+            displayName: "BRG Musterstadt",
+            address: "Musterstraße 1",
+          },
+        ],
+      }),
+    });
+  });
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: /WebUntis/ })
+    .click();
+  await page.getByLabel("Schule suchen", { exact: true }).fill("Musterstadt");
+  await page.getByRole("button", { name: "Schule suchen" }).click();
+  await page.getByRole("button", { name: /BRG Musterstadt/ }).click();
+  await expect(page.getByLabel("Server", { exact: true })).toHaveValue(
+    "mese.webuntis.com",
+  );
+  await expect(page.getByLabel("Schulkürzel", { exact: true })).toHaveValue(
+    "brg-muster",
+  );
+});
+
 test("webuntis api rejects malformed and cross-origin requests", async ({
   request,
 }) => {
