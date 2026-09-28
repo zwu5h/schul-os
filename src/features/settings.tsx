@@ -258,6 +258,10 @@ export function WebUntis() {
           <br />
           Am richtigen Ort.
         </h1>
+        <p className="muted">
+          {w.profile.school || "Keine Schule eingetragen"} ·{" "}
+          {w.profile.grade || "Keine Klasse eingetragen"}
+        </p>
         <p>
           Kein Live-Zugang: Diese App fragt keine WebUntis-Passwörter ab und
           speichert keine. Stattdessen importierst du deinen Stundenplan als
@@ -278,6 +282,43 @@ export function WebUntis() {
         >
           Untis-Dokumentation <ExternalLink size={15} />
         </a>
+      </div>
+      <div className="panel settings-panel">
+        <h2>Schule & Klasse</h2>
+        <p>
+          Einmal eintragen, überall dabei: erscheint hier und in den
+          Einstellungen.
+        </p>
+        <div className="form">
+          <div className="field">
+            <label htmlFor="untis-school">Schule</label>
+            <input
+              id="untis-school"
+              value={w.profile.school}
+              maxLength={120}
+              placeholder="z. B. BRG Musterstadt"
+              onChange={(e) =>
+                w.patch({
+                  profile: { ...w.profile, school: e.target.value },
+                })
+              }
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="untis-class">Klasse</label>
+            <input
+              id="untis-class"
+              value={w.profile.grade}
+              maxLength={40}
+              placeholder="z. B. 3B"
+              onChange={(e) =>
+                w.patch({
+                  profile: { ...w.profile, grade: e.target.value },
+                })
+              }
+            />
+          </div>
+        </div>
       </div>
       <div className="panel settings-panel">
         <h2>Stundenplan als JSON importieren</h2>

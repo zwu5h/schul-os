@@ -345,3 +345,20 @@ test("timetable can be imported from JSON and shows in calendar", async ({
   await page.getByRole("button", { name: "Kalender", exact: true }).click();
   await expect(page.getByText("B207")).toBeVisible();
 });
+
+test("webuntis shows entered school and class", async ({ page }) => {
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: /WebUntis/ })
+    .click();
+  await expect(page.getByText("Keine Schule eingetragen")).toBeVisible();
+  await page.getByLabel("Schule", { exact: true }).fill("BRG Musterstadt");
+  await page.getByLabel("Klasse", { exact: true }).fill("3B");
+  await expect(page.getByText("BRG Musterstadt · 3B")).toBeVisible();
+  await page.reload();
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: /WebUntis/ })
+    .click();
+  await expect(page.getByText("BRG Musterstadt · 3B")).toBeVisible();
+});
