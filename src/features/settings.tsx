@@ -1,8 +1,10 @@
 "use client";
 import { useState } from "react";
-import { Download, Moon, Sun, ExternalLink } from "lucide-react";
+import { Download, Moon, Sun, ExternalLink, Upload } from "lucide-react";
 import { entries, clear } from "idb-keyval";
 import { useWorkspace } from "@/lib/store";
+import { entity, type Lesson } from "@/types/school";
+import { parseTimetableJson, type TimetableEntry } from "@/providers/school";
 import { emptyWorkspace, demoWorkspace } from "@/lib/demo";
 import { download } from "@/components/ui";
 export function Settings() {
@@ -169,34 +171,195 @@ export function Settings() {
   );
 }
 export function WebUntis() {
+  const w = useWorkspace();
+  const [text, setText] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [errors, setErrors] = useState<string[]>([]);
+  const [preview, setPreview] = useState<TimetableEntry[] | null>(null);
+  const [replace, setReplace] = useState(true);
+  const [done, setDone] = useState("");
+  const imported = w.lessons.filter((l) => l.source === "webuntis");
+  const unknown = preview
+    ? [
+        ...new Set(
+          preview
+            .map((e) => e.subject.trim())
+            .filter(
+              (name) =>
+                !w.subjects.some(
+                  (s) => s.name.trim().toLowerCase() === name.toLowerCase(),
+                ),
+            ),
+        ),
+      ]
+    : [];
+  function check() {
+    const result = parseTimetableJson(text);
+    if (!result.ok) {
+      setErrors(result.errors);
+      setPreview(null);
+      return;
+    }
+    setErrors([]);
+    setPreview(result.entries);
+    setDone("");
+  }
+  function apply() {
+    if (!preview) return;
+    const latest = useWorkspace.getState();
+    const subjects = [...latest.subjects];
+    const lessons: Lesson[] = preview.map((e) => {
+      const name = e.subject.trim();
+      let s = subjects.find(
+        (x) => x.name.trim().toLowerCase() === name.toLowerCase(),
+      );
+      if (!s) {
+        s = {
+          ...entity(),
+          name,
+          color: "#9184d7",
+          icon: "◎",
+          teacher: e.teacher,
+          room: "",
+        };
+        subjects.push(s);
+      }
+      return {
+        id: crypto.randomUUID(),
+        subjectId: s.id,
+        start: e.start,
+        end: e.end,
+        room: e.room,
+        teacher: e.teacher,
+        status: e.status,
+        source: "webuntis" as const,
+      };
+    });
+    latest.patch({
+      subjects,
+      lessons: replace
+        ? [...latest.lessons.filter((l) => l.source !== "webuntis"), ...lessons]
+        : [...latest.lessons, ...lessons],
+    });
+    setPreview(null);
+    setText("");
+    setFileName("");
+    setDone(
+      `${lessons.length} ${lessons.length === 1 ? "Stunde" : "Stunden"} übernommen.`,
+    );
+  }
   return (
-    <div className="integration-card panel">
-      <div className="integration-logo">W</div>
-      <span className="eyebrow">SCHULINTEGRATION</span>
-      <h1>
-        Dein Stundenplan.
-        <br />
-        Am richtigen Ort.
-      </h1>
-      <p>
-        WebUntis ist noch nicht verbunden. Dieses MVP enthält die unabhängige
-        Provider-Schnittstelle; ein Live-Adapter folgt nach Prüfung der von
-        deiner Schule freigegebenen API.
-      </p>
-      <span className="pill">Nicht verbunden · Kein Live-Sync</span>
-      <p>
-        Stundenplan-Beispiele werden ausschließlich im Demo-Modus angezeigt. Es
-        werden keine Zugangsdaten abgefragt oder vermeintliche
-        Synchronisierungen ausgeführt.
-      </p>
-      <a
-        className="button"
-        href="https://help.untis.at/"
-        target="_blank"
-        rel="noreferrer"
-      >
-        Untis-Dokumentation <ExternalLink size={15} />
-      </a>
-    </div>
+    <>
+      <div className="integration-card panel">
+        <div className="integration-logo">W</div>
+        <span className="eyebrow">SCHULINTEGRATION</span>
+        <h1>
+          Dein Stundenplan.
+          <br />
+          Am richtigen Ort.
+        </h1>
+        <p>
+          Kein Live-Zugang: Diese App fragt keine WebUntis-Passwörter ab und
+          speichert keine. Stattdessen importierst du deinen Stundenplan als
+          JSON-Datei – einmalig, lokal, jederzeit widerrufbar durch Löschen
+          der Stunden. Ein Live-Adapter folgt erst nach Prüfung der von
+          deiner Schule freigegebenen API.
+        </p>
+        <span className="pill">
+          {imported.length
+            ? `${imported.length} ${imported.length === 1 ? "Stunde" : "Stunden"} per JSON importiert`
+            : "Nicht verbunden · Kein Live-Sync"}
+        </span>
+        <a
+          className="button"
+          href="https://help.untis.at/"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Untis-Dokumentation <ExternalLink size={15} />
+        </a>
+      </div>
+      <div className="panel settings-panel">
+        <h2>Stundenplan als JSON importieren</h2>
+        <p>
+          Format: Objekt mit &quot;lessons&quot;-Liste aus Einträgen mit
+          subject, start, end, room, teacher und status. Zeit als
+          JJJJ-MM-TTTHH:mm, Status regular, cancelled oder changed.
+        </p>
+        <div className="form">
+          <label>
+            JSON-Datei
+            <input
+              type="file"
+              accept=".json,application/json"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (file.size > 1024 * 1024) {
+                  setErrors(["Die Datei ist größer als 1 MB."]);
+                  return;
+                }
+                setFileName(file.name);
+                setText(await file.text());
+                setPreview(null);
+                setDone("");
+              }}
+            />
+          </label>
+          {fileName && <small className="muted">{fileName}</small>}
+          <div className="field">
+            <label htmlFor="timetable-json">Stundenplan-JSON</label>
+            <textarea
+              id="timetable-json"
+              rows={8}
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                setPreview(null);
+              }}
+              placeholder='{"lessons": [{"subject": "Mathematik", "start": "2026-09-29T08:00", "end": "2026-09-29T08:50", "room": "A101"}]}'
+            />
+          </div>
+          <button className="button" onClick={check}>
+            <Upload size={15} /> Prüfen
+          </button>
+          {errors.length > 0 && (
+            <ul className="muted" role="alert">
+              {errors.map((err) => (
+                <li key={err}>{err}</li>
+              ))}
+            </ul>
+          )}
+          {preview && (
+            <>
+              <p className="muted">
+                {preview.length}{" "}
+                {preview.length === 1 ? "Stunde" : "Stunden"} bereit ·{" "}
+                {preview[0].start.slice(0, 10)} bis{" "}
+                {preview[preview.length - 1].end.slice(0, 10)}
+                {unknown.length > 0 &&
+                  ` · Neue Fächer: ${unknown.join(", ")}`}
+              </p>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={replace}
+                  onChange={(e) => setReplace(e.target.checked)}
+                />
+                Bestehende WebUntis-Stunden ersetzen
+              </label>
+              <button className="button primary" onClick={apply}>
+                Übernehmen
+              </button>
+            </>
+          )}
+          {done && (
+            <p className="muted" role="status">
+              {done}
+            </p>
+          )}
+        </div>
+      </div>
+    </>
   );
 }
