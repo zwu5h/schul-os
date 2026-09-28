@@ -7,7 +7,7 @@ export type CaptureKind =
   "note" | "board" | "task" | "exam" | "subject" | "flashcard";
 const labels: Record<CaptureKind, string> = {
   note: "Neue Notiz",
-  board: "Neuer Canvas",
+  board: "Neues Whiteboard",
   task: "Neue Aufgabe",
   exam: "Neue Prüfung",
   subject: "Neues Fach",
@@ -121,9 +121,10 @@ export function Capture({
           />
         </label>
         {kind !== "subject" && (
-          <label>
-            Fach
+          <div className="field">
+            <label htmlFor="capture-subject">Fach</label>
             <select
+              id="capture-subject"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
             >
@@ -134,7 +135,7 @@ export function Capture({
                 </option>
               ))}
             </select>
-          </label>
+          </div>
         )}
         {(kind === "task" || kind === "exam") && (
           <label>
@@ -148,13 +149,13 @@ export function Capture({
           </label>
         )}
         {kind === "task" && (
-          <label>
-            Priorität
-            <select name="priority">
+          <div className="field">
+            <label htmlFor="capture-priority">Priorität</label>
+            <select id="capture-priority" name="priority">
               <option value="normal">Normal</option>
               <option value="high">Hoch</option>
             </select>
-          </label>
+          </div>
         )}
         {(kind === "exam" || kind === "flashcard") && (
           <label>

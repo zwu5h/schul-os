@@ -24,6 +24,7 @@ import {
 import { useWorkspace } from "@/lib/store";
 import { demoWorkspace, emptyWorkspace } from "@/lib/demo";
 import { entity, type View } from "@/types/school";
+import { BoardLibrary } from "@/features/board-library";
 import { Dashboard } from "@/features/dashboard";
 import { Capture, type CaptureKind } from "@/features/capture";
 import { Calendar, Learn, Tasks } from "@/features/organization";
@@ -44,6 +45,7 @@ const Files = dynamic(() => import("@/features/files").then((m) => m.Files), {
   ssr: false,
 });
 const navigation = [
+  { id: "canvas", label: "Whiteboards", icon: Layers },
   { id: "today", label: "Heute", icon: Home },
   { id: "calendar", label: "Kalender", icon: CalendarDays },
   { id: "tasks", label: "Aufgaben", icon: CheckSquare },
@@ -51,7 +53,7 @@ const navigation = [
 ] as const;
 const workspaceNav = [
   { id: "notes", label: "Notizen", icon: FileText },
-  { id: "canvas", label: "Canvas", icon: Layers },
+
   { id: "files", label: "Dateien", icon: FolderOpen },
   { id: "learn", label: "Lernkarten", icon: BookOpen },
 ] as const;
@@ -61,7 +63,7 @@ const titles: Record<View, string> = {
   tasks: "Aufgaben",
   ai: "KI-Assistent",
   notes: "Notizen",
-  canvas: "Canvas",
+  canvas: "Whiteboards",
   files: "Dateien",
   learn: "Lernkarten",
   subjects: "Fächer",
@@ -70,7 +72,7 @@ const titles: Record<View, string> = {
 };
 export function SchoolApp() {
   const w = useWorkspace();
-  const [view, setView] = useState<View>("today");
+  const [view, setView] = useState<View>("canvas");
   const [subjectId, setSubjectId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [capture, setCapture] = useState<CaptureKind | null>(null);
@@ -140,6 +142,12 @@ export function SchoolApp() {
   function open(next: "notes" | "canvas", id: string) {
     setView(next);
     setActiveId(id);
+    const current = useWorkspace.getState();
+    const item =
+      next === "canvas"
+        ? current.boards.find((b) => b.id === id)
+        : current.notes.find((n) => n.id === id);
+    setSubjectId(item?.subjectId || null);
     setSearch(false);
   }
   function ask(text: string) {
@@ -157,9 +165,6 @@ export function SchoolApp() {
   }
   const subject = w.subjects.find((s) => s.id === subjectId);
   const notes = w.notes.filter((n) => !subjectId || n.subjectId === subjectId);
-  const boards = w.boards.filter(
-    (b) => !subjectId || b.subjectId === subjectId,
-  );
   if (!w.ready)
     return (
       <div className="boot">
@@ -280,7 +285,7 @@ export function SchoolApp() {
         />
       )}
       <aside className={`sidebar ${mobile ? "mobile-open" : ""}`}>
-        <button className="brand" onClick={() => go("today")}>
+        <button className="brand" onClick={() => go("canvas")}>
           <span>
             <GraduationCap size={21} />
           </span>
@@ -347,7 +352,7 @@ export function SchoolApp() {
             <button
               key={s.id}
               className={subjectId === s.id ? "active" : ""}
-              onClick={() => go("subjects", s.id)}
+              onClick={() => go("canvas", s.id)}
             >
               <span className="subject-dot" style={{ background: s.color }} />
               {s.name}
@@ -420,9 +425,15 @@ export function SchoolApp() {
           </div>
         )}
         <main
-          className={view === "ai" ? "main-content chat-page" : "main-content"}
+          className={
+            view === "ai"
+              ? "main-content chat-page"
+              : view === "canvas" && activeId
+                ? "main-content canvas-page"
+                : "main-content"
+          }
         >
-          {view !== "today" && view !== "ai" && (
+          {view !== "today" && view !== "ai" && view !== "canvas" && (
             <div className="page-heading">
               <div>
                 {activeId && (
@@ -434,13 +445,7 @@ export function SchoolApp() {
                   </button>
                 )}
                 <span className="eyebrow">DEIN WORKSPACE</span>
-                <h1>
-                  {activeId
-                    ? view === "canvas"
-                      ? w.boards.find((b) => b.id === activeId)?.title
-                      : "Notizen"
-                    : subject?.name || titles[view]}
-                </h1>
+                <h1>{activeId ? "Notizen" : subject?.name || titles[view]}</h1>
               </div>
               {subject && (
                 <span className="muted">
@@ -525,7 +530,7 @@ export function SchoolApp() {
                       <button
                         className="item-card panel"
                         key={s.id}
-                        onClick={() => go("subjects", s.id)}
+                        onClick={() => go("canvas", s.id)}
                       >
                         <span
                           className="subject-symbol"
@@ -604,45 +609,21 @@ export function SchoolApp() {
             ))}
           {view === "canvas" &&
             (activeId ? (
-              <Canvas key={activeId} id={activeId} ask={ask} />
+              <Canvas
+                key={activeId}
+                id={activeId}
+                ask={ask}
+                back={() => setActiveId(null)}
+                create={() => setCapture("board")}
+                switchBoard={(id) => open("canvas", id)}
+              />
             ) : (
-              <>
-                <div className="view-actions">
-                  <p>Unendlich viel Platz für deine Ideen.</p>
-                  <button
-                    className="button primary"
-                    onClick={() => setCapture("board")}
-                  >
-                    <Plus size={16} /> Neuer Canvas
-                  </button>
-                </div>
-                <div className="item-grid">
-                  {boards.map((b) => (
-                    <button
-                      className="item-card panel"
-                      key={b.id}
-                      onClick={() => open("canvas", b.id)}
-                    >
-                      <div className="board-preview">
-                        <span>Idee</span>
-                        <i />
-                        <span>Wissen</span>
-                      </div>
-                      <h3>{b.title}</h3>
-                      <small>
-                        {w.subjects.find((s) => s.id === b.subjectId)?.name ||
-                          "Inbox"}
-                      </small>
-                    </button>
-                  ))}
-                </div>
-                {!boards.length && (
-                  <Empty
-                    title="Denk über den Rand hinaus"
-                    description="Erstelle einen Canvas für Skizzen, Bilder und Zusammenhänge."
-                  />
-                )}
-              </>
+              <BoardLibrary
+                subjectId={subjectId}
+                chooseSubject={setSubjectId}
+                open={(id) => open("canvas", id)}
+                create={() => setCapture("board")}
+              />
             ))}
           {view === "tasks" && (
             <Tasks subjectId={subjectId} create={() => setCapture("task")} />
