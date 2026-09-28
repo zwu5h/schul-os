@@ -1,0 +1,5 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["opencode-muse-auth"],
+  "model": "meta/muse-spark-1.3"
+}
