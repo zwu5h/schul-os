@@ -1410,7 +1410,8 @@ nav > button small {
   display: flex;
   gap: 14px;
 }
-.form-row > label {
+.form-row > label,
+.form-row > .field {
   flex: 1;
   min-width: 0;
 }

@@ -346,6 +346,115 @@ test("timetable can be imported from JSON and shows in calendar", async ({
   await expect(page.getByText("B207")).toBeVisible();
 });
 
+test("account section explains missing cloud backend", async ({ page }) => {
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Einstellungen", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Konto & Cloud" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Cloud-Backend ist nicht konfiguriert"),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel("E-Mail", { exact: true }),
+  ).toBeHidden();
+});
+
+test("live timetable fetch imports previewed lessons", async ({ page }) => {
+  const today = await page.evaluate(() => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  });
+  const lessons = [
+    {
+      subject: "Mathematik",
+      start: `${today}T08:00`,
+      end: `${today}T08:50`,
+      room: "C301",
+      teacher: "",
+      status: "regular",
+    },
+    {
+      subject: "Sport",
+      start: `${today}T09:00`,
+      end: `${today}T09:50`,
+      room: "C302",
+      teacher: "",
+      status: "regular",
+    },
+  ];
+  await page.route("**/api/webuntis", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ lessons }),
+    }),
+  );
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: /WebUntis/ })
+    .click();
+  await page.getByLabel("Server", { exact: true }).fill("mese.webuntis.com");
+  await page.getByLabel("Schulkürzel", { exact: true }).fill("brg-muster");
+  await page.getByLabel("Benutzer", { exact: true }).fill("schueler123");
+  await page.getByLabel("Passwort", { exact: true }).fill("geheim");
+  await page.getByRole("button", { name: "Abrufen und prüfen" }).click();
+  await expect(page.getByText("2 Stunden bereit")).toBeVisible();
+  await expect(page.getByText("Neue Fächer: Sport")).toBeVisible();
+  await page.getByRole("button", { name: "Übernehmen", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("2 Stunden übernommen");
+  await page.getByRole("button", { name: "Kalender", exact: true }).click();
+  await expect(page.getByText("C301")).toBeVisible();
+  await expect(page.getByText("C302")).toBeVisible();
+});
+
+test("live timetable fetch shows auth errors", async ({ page }) => {
+  await page.route("**/api/webuntis", (route) =>
+    route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: "Schule, Benutzer oder Passwort wurde nicht akzeptiert.",
+      }),
+    }),
+  );
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: /WebUntis/ })
+    .click();
+  await page.getByLabel("Server", { exact: true }).fill("mese.webuntis.com");
+  await page.getByLabel("Schulkürzel", { exact: true }).fill("brg-muster");
+  await page.getByLabel("Benutzer", { exact: true }).fill("falsch");
+  await page.getByLabel("Passwort", { exact: true }).fill("falsch");
+  await page.getByRole("button", { name: "Abrufen und prüfen" }).click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "akzeptiert" }),
+  ).toContainText("nicht akzeptiert");
+});
+
+test("webuntis api rejects malformed and cross-origin requests", async ({
+  request,
+}) => {
+  const invalid = await request.post("/api/webuntis", {
+    headers: { Origin: "http://127.0.0.1:3000" },
+    data: { server: "mese.webuntis.com" },
+  });
+  expect(invalid.status()).toBe(400);
+  const cross = await request.post("/api/webuntis", {
+    headers: { Origin: "https://untrusted.example" },
+    data: {
+      server: "mese.webuntis.com",
+      school: "brg-muster",
+      username: "x",
+      password: "y",
+    },
+  });
+  expect(cross.status()).toBe(403);
+});
+
 test("webuntis shows entered school and class", async ({ page }) => {
   await page
     .locator(".sidebar")

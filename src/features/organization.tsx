@@ -7,7 +7,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { useWorkspace } from "@/lib/store";
+import { trackDelete, useWorkspace } from "@/lib/store";
 import { entity, localDate, type Flashcard } from "@/types/school";
 import { Empty, Modal } from "@/components/ui";
 import { TaskRow } from "./dashboard";
@@ -79,8 +79,10 @@ export function Tasks({
               className="icon-button"
               aria-label={`${t.title} löschen`}
               onClick={() => {
-                if (confirm("Aufgabe löschen?"))
+                if (confirm("Aufgabe löschen?")) {
                   w.patch({ tasks: w.tasks.filter((x) => x.id !== t.id) });
+                  trackDelete(t.id);
+                }
               }}
             >
               <Trash2 size={15} />
@@ -196,10 +198,12 @@ export function Calendar({ create }: { create: () => void }) {
                     <button
                       className="text-button"
                       onClick={() => {
-                        if (confirm("Prüfung löschen?"))
-                          w.patch({
-                            exams: w.exams.filter((x) => x.id !== e.id),
-                          });
+                        if (confirm("Prüfung löschen?")) {
+                      w.patch({
+                        exams: w.exams.filter((x) => x.id !== e.id),
+                      });
+                      trackDelete(e.id);
+                    }
                       }}
                     >
                       Entfernen
@@ -361,6 +365,7 @@ export function Learn({
                   w.patch({
                     flashcards: w.flashcards.filter((c) => c.id !== card.id),
                   });
+                  trackDelete(card.id);
                   setBack(false);
                 }
               }}

@@ -10,6 +10,14 @@ type Store = Workspace & {
   reset: (value: Workspace) => void;
   hydrate: () => void;
 };
+/** Merkt gelöschte IDs für den Cloud-Abgleich (Tombstones, max. 2000). */
+export function trackDelete(...ids: string[]) {
+  if (!ids.length) return;
+  const current = useWorkspace.getState();
+  const known = new Set(current.deletedIds ?? []);
+  ids.forEach((id) => known.add(id));
+  useWorkspace.setState({ deletedIds: [...known].slice(-2000) });
+}
 export const useWorkspace = create<Store>()(
   persist(
     (set) => ({

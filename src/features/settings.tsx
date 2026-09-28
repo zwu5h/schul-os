@@ -5,10 +5,116 @@ import { entries, clear } from "idb-keyval";
 import { useWorkspace } from "@/lib/store";
 import { entity, type Lesson } from "@/types/school";
 import { parseTimetableJson, type TimetableEntry } from "@/providers/school";
+import { isCloudEnabled, useAuth } from "@/lib/auth";
+import { useSync } from "@/lib/sync";
 import { emptyWorkspace, demoWorkspace } from "@/lib/demo";
 import { download } from "@/components/ui";
+function Account() {
+  const auth = useAuth();
+  const sync = useSync();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  if (!isCloudEnabled()) {
+    return (
+      <p className="muted">
+        Cloud-Backend ist nicht konfiguriert. Für Login und Sync ein
+        Supabase-Projekt anlegen, die Migration aus{" "}
+        <code>supabase/migrations/0001_foundation.sql</code> anwenden und{" "}
+        <code>NEXT_PUBLIC_SUPABASE_URL</code> sowie{" "}
+        <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> setzen – Anleitung in{" "}
+        <code>docs/CLOUD_SETUP.md</code>.
+      </p>
+    );
+  }
+  if (!auth.ready) return <p className="muted">Konto wird geladen …</p>;
+  if (!auth.user) {
+    return (
+      <div className="form">
+        <div className="field">
+          <label htmlFor="account-email">E-Mail</label>
+          <input
+            id="account-email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="du@beispiel.at"
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="account-password">Passwort</label>
+          <input
+            id="account-password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Mindestens 6 Zeichen"
+          />
+        </div>
+        <div className="form-row">
+          <button
+            className="button primary"
+            disabled={auth.busy}
+            onClick={() => void auth.signIn(email.trim(), password)}
+          >
+            Anmelden
+          </button>
+          <button
+            className="button"
+            disabled={auth.busy}
+            onClick={() => void auth.signUp(email.trim(), password)}
+          >
+            Konto erstellen
+          </button>
+        </div>
+        {auth.error && (
+          <p className="muted" role="alert">
+            {auth.error}
+          </p>
+        )}
+        {auth.notice && (
+          <p className="muted" role="status">
+            {auth.notice}
+          </p>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="form">
+      <p>
+        Angemeldet als <strong>{auth.user.email}</strong>
+      </p>
+      <p className="muted">
+        {sync.lastSync
+          ? `Zuletzt synchronisiert: ${new Date(sync.lastSync).toLocaleString("de-AT")}`
+          : "Noch nicht synchronisiert."}{" "}
+        Änderungen werden automatisch hochgeladen.
+      </p>
+      <div className="form-row">
+        <button
+          className="button"
+          disabled={sync.running}
+          onClick={() => void sync.syncNow()}
+        >
+          {sync.running ? "Synchronisiert …" : "Jetzt synchronisieren"}
+        </button>
+        <button className="button" onClick={() => void auth.signOut()}>
+          Abmelden
+        </button>
+      </div>
+      {sync.error && (
+        <p className="muted" role="alert">
+          {sync.error}
+        </p>
+      )}
+    </div>
+  );
+}
 export function Settings() {
   const w = useWorkspace();
+  const authUser = useAuth((s) => s.user);
   const [status, setStatus] = useState("");
   return (
     <div className="settings-grid">
@@ -34,6 +140,10 @@ export function Settings() {
         </div>
       </section>
       <section className="panel settings-panel">
+        <h2>Konto & Cloud</h2>
+        <Account />
+      </section>
+      <section className="panel settings-panel">
         <h2>Dein Workspace</h2>
         <p>Ein ruhiger Ort. So, wie du ihn brauchst.</p>
         <button
@@ -49,7 +159,10 @@ export function Settings() {
         <h3>Daten & Sicherung</h3>
         <p>
           Notizen und Aufgaben liegen im Browserspeicher. Canvas und Dateien
-          liegen in IndexedDB. Noch kein Cloud-Sync.
+          liegen in IndexedDB.{" "}
+          {authUser
+            ? "Angemeldet: Änderungen syncen automatisch in die Cloud."
+            : "Ohne Anmeldung bleibt alles nur lokal in diesem Browser."}
         </p>
         <button
           className="button"
@@ -178,6 +291,12 @@ export function WebUntis() {
   const [preview, setPreview] = useState<TimetableEntry[] | null>(null);
   const [replace, setReplace] = useState(true);
   const [done, setDone] = useState("");
+  const [server, setServer] = useState("");
+  const [schoolName, setSchoolName] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [days, setDays] = useState(7);
+  const [fetching, setFetching] = useState(false);
   const imported = w.lessons.filter((l) => l.source === "webuntis");
   const unknown = preview
     ? [
@@ -203,6 +322,56 @@ export function WebUntis() {
     setErrors([]);
     setPreview(result.entries);
     setDone("");
+  }
+  async function fetchLive() {
+    if (
+      !server.trim() ||
+      !schoolName.trim() ||
+      !username.trim() ||
+      !password
+    ) {
+      setErrors(["Bitte Server, Schule, Benutzer und Passwort ausfüllen."]);
+      setPreview(null);
+      return;
+    }
+    setFetching(true);
+    setErrors([]);
+    setDone("");
+    try {
+      const res = await fetch("/api/webuntis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          server: server.trim(),
+          school: schoolName.trim(),
+          username: username.trim(),
+          password,
+          days,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErrors([
+          typeof data.error === "string"
+            ? data.error
+            : "Abruf fehlgeschlagen.",
+        ]);
+        setPreview(null);
+        return;
+      }
+      const entries = Array.isArray(data.lessons) ? data.lessons : [];
+      if (!entries.length) {
+        setErrors(["Keine Stunden im Zeitraum gefunden."]);
+        setPreview(null);
+        return;
+      }
+      setPreview(entries as TimetableEntry[]);
+    } catch {
+      setErrors(["WebUntis ist nicht erreichbar."]);
+      setPreview(null);
+    } finally {
+      setFetching(false);
+    }
   }
   function apply() {
     if (!preview) return;
@@ -244,6 +413,7 @@ export function WebUntis() {
     setPreview(null);
     setText("");
     setFileName("");
+    setPassword("");
     setDone(
       `${lessons.length} ${lessons.length === 1 ? "Stunde" : "Stunden"} übernommen.`,
     );
@@ -318,6 +488,79 @@ export function WebUntis() {
               }
             />
           </div>
+        </div>
+      </div>
+      <div className="panel settings-panel">
+        <h2>Live aus WebUntis abrufen</h2>
+        <p>
+          Mit deinen WebUntis-Zugangsdaten. Das Passwort bleibt nur in
+          dieser Sitzung im Arbeitsspeicher und wird nie gespeichert.
+        </p>
+        <div className="form">
+          <div className="field">
+            <label htmlFor="live-server">Server</label>
+            <input
+              id="live-server"
+              value={server}
+              maxLength={80}
+              placeholder="z. B. mese.webuntis.com"
+              autoComplete="off"
+              onChange={(e) => setServer(e.target.value)}
+            />
+          </div>
+          <div className="form-row">
+            <div className="field">
+              <label htmlFor="live-school">Schulkürzel</label>
+              <input
+                id="live-school"
+                value={schoolName}
+                maxLength={80}
+                placeholder="Schulkürzel"
+                autoComplete="off"
+                onChange={(e) => setSchoolName(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="live-days">Zeitraum</label>
+              <select
+                id="live-days"
+                value={days}
+                onChange={(e) => setDays(Number(e.target.value))}
+              >
+                <option value={7}>7 Tage</option>
+                <option value={14}>14 Tage</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="field">
+              <label htmlFor="live-user">Benutzer</label>
+              <input
+                id="live-user"
+                value={username}
+                maxLength={80}
+                autoComplete="username"
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="live-password">Passwort</label>
+              <input
+                id="live-password"
+                type="password"
+                value={password}
+                autoComplete="current-password"
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+          </div>
+          <button
+            className="button primary"
+            disabled={fetching}
+            onClick={() => void fetchLive()}
+          >
+            {fetching ? "Rufe ab …" : "Abrufen und prüfen"}
+          </button>
         </div>
       </div>
       <div className="panel settings-panel">

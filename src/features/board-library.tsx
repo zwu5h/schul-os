@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { get, set, del } from "idb-keyval";
 import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
-import { useWorkspace } from "@/lib/store";
+import { trackDelete, useWorkspace } from "@/lib/store";
 import { entity, type Board } from "@/types/school";
 import { Empty, Modal, download } from "@/components/ui";
 
@@ -257,6 +257,7 @@ export function BoardLibrary({
                       latest.patch({
                         boards: latest.boards.filter((b) => b.id !== board.id),
                       });
+                      trackDelete(board.id);
                     } catch {
                       setError("Löschen fehlgeschlagen.");
                     }

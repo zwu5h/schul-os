@@ -14,6 +14,7 @@ export function emptyWorkspace(): Workspace {
     demo: false,
     theme: "light",
     onboarded: false,
+    deletedIds: [],
   };
 }
 export function demoWorkspace(): Workspace {

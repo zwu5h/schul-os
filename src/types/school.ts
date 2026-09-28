@@ -78,6 +78,8 @@ export interface Workspace {
   demo: boolean;
   theme: "light" | "dark";
   onboarded: boolean;
+  /** IDs gelöschter Objekte für den Cloud-Abgleich (Tombstones). */
+  deletedIds: string[];
 }
 export type View =
   | "today"

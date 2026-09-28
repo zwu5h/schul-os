@@ -14,7 +14,7 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { useWorkspace } from "@/lib/store";
+import { trackDelete, useWorkspace } from "@/lib/store";
 import { download } from "@/components/ui";
 export function NoteEditor({
   id,
@@ -74,6 +74,7 @@ export function NoteEditor({
               if (confirm("Diese Notiz wirklich löschen?")) {
                 const w = useWorkspace.getState();
                 w.patch({ notes: w.notes.filter((n) => n.id !== id) });
+                trackDelete(id);
                 close();
               }
             }}

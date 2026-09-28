@@ -31,6 +31,50 @@ export type TimetableParse =
   | { ok: true; entries: TimetableEntry[] }
   | { ok: false; errors: string[] };
 
+interface WebUntisPeriod {
+  date: number;
+  startTime: number;
+  endTime: number;
+  su: Array<{ name?: string; longname?: string }>;
+  te: Array<{ name?: string; longname?: string }>;
+  ro: Array<{ name?: string; longname?: string }>;
+  code?: "cancelled" | "irregular" | string;
+}
+
+/** WebUntis-Perioden (Datum JJJJMMTT, Zeit HHMM) ins Import-Format bringen. */
+export function normalizeWebUntisLessons(
+  periods: WebUntisPeriod[],
+): TimetableEntry[] {
+  const pick = (list: Array<{ name?: string; longname?: string }>) =>
+    list[0]?.longname || list[0]?.name || "";
+  const pad = (n: number, len: number) => String(n).padStart(len, "0");
+  const out: TimetableEntry[] = [];
+  for (const p of periods) {
+    const day = pad(p.date, 8);
+    const from = `${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6, 8)}`;
+    const time = (t: number) => {
+      const s = pad(t, 4);
+      return `${s.slice(0, 2)}:${s.slice(2, 4)}`;
+    };
+    const subject = pick(p.su);
+    if (!subject) continue;
+    out.push({
+      subject: subject.slice(0, 140),
+      start: `${from}T${time(p.startTime)}`,
+      end: `${from}T${time(p.endTime)}`,
+      room: pick(p.ro).slice(0, 40),
+      teacher: pick(p.te).slice(0, 80),
+      status:
+        p.code === "cancelled"
+          ? "cancelled"
+          : p.code === "irregular"
+            ? "changed"
+            : "regular",
+    });
+  }
+  return out;
+}
+
 export function parseTimetableJson(text: string): TimetableParse {
   let data: unknown;
   try {

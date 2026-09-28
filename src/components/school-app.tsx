@@ -22,6 +22,8 @@ import {
   X,
 } from "lucide-react";
 import { useWorkspace } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
+import { initAutoSync } from "@/lib/sync";
 import { demoWorkspace, emptyWorkspace } from "@/lib/demo";
 import { entity, type View } from "@/types/school";
 import { BoardLibrary } from "@/features/board-library";
@@ -91,6 +93,8 @@ export function SchoolApp() {
     void Promise.resolve(useWorkspace.persist.rehydrate()).finally(() =>
       useWorkspace.getState().hydrate(),
     );
+    useAuth.getState().init();
+    initAutoSync();
     const sync = () => setOnline(navigator.onLine);
     sync();
     window.addEventListener("online", sync);

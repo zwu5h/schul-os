@@ -14,7 +14,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
-import { useWorkspace } from "@/lib/store";
+import { trackDelete, useWorkspace } from "@/lib/store";
 import { entity } from "@/types/school";
 import { retrieveNotes } from "@/lib/retrieval";
 export function Chat({
@@ -136,7 +136,10 @@ export function Chat({
           disabled={busy}
           title="Chat leeren"
           onClick={() => {
-            if (confirm("Diesen Chat löschen?")) w.patch({ messages: [] });
+            if (confirm("Diesen Chat löschen?")) {
+              trackDelete(...w.messages.map((m) => m.id));
+              w.patch({ messages: [] });
+            }
           }}
         >
           <Trash2 size={16} />

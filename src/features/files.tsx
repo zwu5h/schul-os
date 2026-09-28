@@ -3,7 +3,7 @@ import { get, set, del } from "idb-keyval";
 import Image from "next/image";
 import { useRef, useState } from "react";
 import { Upload, File, Download, Trash2 } from "lucide-react";
-import { useWorkspace } from "@/lib/store";
+import { trackDelete, useWorkspace } from "@/lib/store";
 import { entity, type SchoolFile } from "@/types/school";
 import { Empty, Modal } from "@/components/ui";
 export async function saveFiles(files: File[], subjectId: string | null) {
@@ -136,6 +136,7 @@ export function Files({
                     .getState()
                     .files.filter((x) => x.id !== f.id),
                 });
+                trackDelete(f.id);
               }}
             >
               <Trash2 size={16} />
