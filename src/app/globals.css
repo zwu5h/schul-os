@@ -2678,3 +2678,25 @@ nav > button small {
     font-size: 10px;
   }
 }
+
+/* iOS-App-Haertung: Standalone-Verhalten ohne Browser-Macken. */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  overscroll-behavior-y: none;
+}
+button,
+a {
+  touch-action: manipulation;
+}
+.app {
+  min-height: 100dvh;
+}
+.onboarding,
+.onboarding-art {
+  min-height: 100dvh;
+}
+.ai-panel {
+  height: 100dvh;
+}

@@ -30,3 +30,12 @@ test("settings panels stack to one column on narrow screens", async ({
     .evaluate((el) => getComputedStyle(el).gridTemplateColumns);
   expect(columns.trim().split(/\s+/)).toHaveLength(1);
 });
+
+test("pwa manifest and ios icon are served", async ({ request }) => {
+  const manifest = await request.get("/manifest.webmanifest");
+  expect(manifest.ok()).toBeTruthy();
+  const body = await manifest.json();
+  expect(body.display).toBe("standalone");
+  const icon = await request.get("/apple-touch-icon.png");
+  expect(icon.ok()).toBeTruthy();
+});
