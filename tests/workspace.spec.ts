@@ -237,3 +237,111 @@ test("whiteboards can be named, assigned, switched, exported and reopened", asyn
   });
   expect(strokes).toBeGreaterThanOrEqual(2);
 });
+
+test("flashcards can be imported from a pasted list", async ({ page }) => {
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Lernkarten", exact: true })
+    .click();
+  const counter = page.locator(".view-actions span").first();
+  await expect(counter).toContainText("Karten gelernt");
+  const before = await counter.innerText();
+  const total = Number(before.match(/von (\d+)/)?.[1] ?? 0);
+  await page.getByRole("button", { name: "Liste importieren" }).click();
+  await page
+    .getByLabel("Karteikarten-Liste", { exact: true })
+    .fill(
+      "Zellkern | steuert die Zelle\n\nOhne Trennzeichen\nMitochondrien | Kraftwerk der Zelle",
+    );
+  await page.getByRole("button", { name: "Importieren", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("2 Karten importiert");
+  await expect(counter).toContainText(`von ${total + 2}`);
+  await page.reload();
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Lernkarten", exact: true })
+    .click();
+  await expect(page.locator(".view-actions span").first()).toContainText(
+    `von ${total + 2}`,
+  );
+});
+
+test("subject hub links to whiteboards and flashcards", async ({ page }) => {
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Mathematik", exact: true })
+    .click();
+  await expect(
+    page.getByText("Alles zu Mathematik, an einem Ort."),
+  ).toBeVisible();
+  await page
+    .locator(".subject-actions")
+    .getByRole("button", { name: /Whiteboards/ })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Mathematik", exact: true }),
+  ).toBeVisible();
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Mathematik", exact: true })
+    .click();
+  await page
+    .locator(".subject-actions")
+    .getByRole("button", { name: /Lernkarten/ })
+    .click();
+  await expect(page.locator(".view-actions span").first()).toContainText(
+    "Karten gelernt",
+  );
+});
+
+test("timetable can be imported from JSON and shows in calendar", async ({
+  page,
+}) => {
+  const today = await page.evaluate(() => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  });
+  const payload = JSON.stringify({
+    lessons: [
+      {
+        subject: "Mathematik",
+        start: `${today}T08:00`,
+        end: `${today}T08:50`,
+        room: "B207",
+      },
+      {
+        subject: "Physik",
+        start: `${today}T09:00`,
+        end: `${today}T09:50`,
+        room: "B208",
+      },
+    ],
+  });
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: /WebUntis/ })
+    .click();
+  await page
+    .getByLabel("Stundenplan-JSON", { exact: true })
+    .fill("kein json");
+  await page.getByRole("button", { name: "Prüfen", exact: true }).click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "JSON" }),
+  ).toContainText("kein gültiges JSON");
+  await page.getByLabel("Stundenplan-JSON", { exact: true }).fill(payload);
+  await page.getByRole("button", { name: "Prüfen", exact: true }).click();
+  await expect(page.getByText("2 Stunden bereit")).toBeVisible();
+  await expect(page.getByText("Neue Fächer: Physik")).toBeVisible();
+  await page.getByRole("button", { name: "Übernehmen", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("2 Stunden übernommen");
+  await expect(
+    page.getByText("2 Stunden per JSON importiert"),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Kalender", exact: true }).click();
+  await expect(page.getByText("B207")).toBeVisible();
+  await expect(page.getByText("B208")).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Kalender", exact: true }).click();
+  await expect(page.getByText("B207")).toBeVisible();
+});

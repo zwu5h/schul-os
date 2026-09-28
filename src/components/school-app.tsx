@@ -57,6 +57,9 @@ const workspaceNav = [
   { id: "files", label: "Dateien", icon: FolderOpen },
   { id: "learn", label: "Lernkarten", icon: BookOpen },
 ] as const;
+function plural(n: number, one: string, many: string) {
+  return `${n} ${n === 1 ? one : many}`;
+}
 const titles: Record<View, string> = {
   today: "Heute",
   calendar: "Kalender",
@@ -352,7 +355,7 @@ export function SchoolApp() {
             <button
               key={s.id}
               className={subjectId === s.id ? "active" : ""}
-              onClick={() => go("canvas", s.id)}
+              onClick={() => go("subjects", s.id)}
             >
               <span className="subject-dot" style={{ background: s.color }} />
               {s.name}
@@ -480,23 +483,88 @@ export function SchoolApp() {
                     </button>
                   </div>
                   <div className="subject-actions">
-                    {workspaceNav.map((item) => (
-                      <button
-                        className="panel"
-                        key={item.id}
-                        onClick={() => go(item.id, subject.id)}
-                      >
-                        <item.icon size={24} />
-                        <h3>{item.label}</h3>
-                        <ArrowUpRight size={16} />
-                      </button>
-                    ))}
+                    <button
+                      className="panel"
+                      onClick={() => go("canvas", subject.id)}
+                    >
+                      <Layers size={24} />
+                      <h3>Whiteboards</h3>
+                      <small>
+                        {plural(
+                          w.boards.filter((b) => b.subjectId === subject.id)
+                            .length,
+                          "Whiteboard",
+                          "Whiteboards",
+                        )}
+                      </small>
+                      <ArrowUpRight size={16} />
+                    </button>
+                    <button
+                      className="panel"
+                      onClick={() => go("notes", subject.id)}
+                    >
+                      <FileText size={24} />
+                      <h3>Notizen</h3>
+                      <small>
+                        {plural(
+                          w.notes.filter((n) => n.subjectId === subject.id)
+                            .length,
+                          "Notiz",
+                          "Notizen",
+                        )}
+                      </small>
+                      <ArrowUpRight size={16} />
+                    </button>
+                    <button
+                      className="panel"
+                      onClick={() => go("files", subject.id)}
+                    >
+                      <FolderOpen size={24} />
+                      <h3>Dateien</h3>
+                      <small>
+                        {plural(
+                          w.files.filter((f) => f.subjectId === subject.id)
+                            .length,
+                          "Datei",
+                          "Dateien",
+                        )}
+                      </small>
+                      <ArrowUpRight size={16} />
+                    </button>
+                    <button
+                      className="panel"
+                      onClick={() => go("learn", subject.id)}
+                    >
+                      <BookOpen size={24} />
+                      <h3>Lernkarten</h3>
+                      <small>
+                        {plural(
+                          w.flashcards.filter(
+                            (c) => c.subjectId === subject.id,
+                          ).length,
+                          "Lernkarte",
+                          "Lernkarten",
+                        )}
+                      </small>
+                      <ArrowUpRight size={16} />
+                    </button>
                     <button
                       className="panel"
                       onClick={() => go("tasks", subject.id)}
                     >
                       <CheckSquare size={24} />
                       <h3>Aufgaben</h3>
+                      <small>
+                        {plural(
+                          w.tasks.filter(
+                            (t) =>
+                              t.subjectId === subject.id &&
+                              t.status !== "done",
+                          ).length,
+                          "offene Aufgabe",
+                          "offene Aufgaben",
+                        )}
+                      </small>
                       <ArrowUpRight size={16} />
                     </button>
                   </div>
@@ -530,7 +598,7 @@ export function SchoolApp() {
                       <button
                         className="item-card panel"
                         key={s.id}
-                        onClick={() => go("canvas", s.id)}
+                        onClick={() => go("subjects", s.id)}
                       >
                         <span
                           className="subject-symbol"
