@@ -5,7 +5,7 @@ import { entries, clear } from "idb-keyval";
 import { useWorkspace } from "@/lib/store";
 import { entity, type Lesson } from "@/types/school";
 import { parseTimetableJson, type TimetableEntry } from "@/providers/school";
-import type { SchoolSuggestion } from "@/lib/webuntis";
+import { DEFAULT_SCHOOL_SUGGESTION, type SchoolSuggestion } from "@/lib/webuntis";
 import { isCloudEnabled, useAuth } from "@/lib/auth";
 import { useSync } from "@/lib/sync";
 import { emptyWorkspace, demoWorkspace } from "@/lib/demo";
@@ -309,13 +309,19 @@ export function WebUntis() {
       return { server: "", school: "", username: "" };
     }
   });
-  const [server, setServer] = useState(savedConnection.server);
-  const [schoolName, setSchoolName] = useState(savedConnection.school);
+  const [server, setServer] = useState(
+    savedConnection.server || DEFAULT_SCHOOL_SUGGESTION.server,
+  );
+  const [schoolName, setSchoolName] = useState(
+    savedConnection.school || DEFAULT_SCHOOL_SUGGESTION.loginName,
+  );
   const [username, setUsername] = useState(savedConnection.username);
   const [password, setPassword] = useState("");
   const [days, setDays] = useState(7);
   const [fetching, setFetching] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(
+    savedConnection.server ? "" : DEFAULT_SCHOOL_SUGGESTION.displayName,
+  );
   const [schools, setSchools] = useState<SchoolSuggestion[]>([]);
   const [searching, setSearching] = useState(false);
   const imported = w.lessons.filter((l) => l.source === "webuntis");
@@ -547,7 +553,7 @@ export function WebUntis() {
               id="untis-school"
               value={w.profile.school}
               maxLength={120}
-              placeholder="z. B. BRG Musterstadt"
+              placeholder="z. B. BG/BRG Neusiedl/See"
               onChange={(e) =>
                 w.patch({
                   profile: { ...w.profile, school: e.target.value },
@@ -586,7 +592,7 @@ export function WebUntis() {
               id="live-search"
               value={search}
               maxLength={80}
-              placeholder="z. B. BRG Musterstadt"
+              placeholder="z. B. BG/BRG Neusiedl/See"
               autoComplete="off"
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {
@@ -628,7 +634,7 @@ export function WebUntis() {
               id="live-server"
               value={server}
               maxLength={80}
-              placeholder="z. B. mese.webuntis.com"
+              placeholder="z. B. gymnasium-neusiedl.webuntis.com"
               autoComplete="off"
               onChange={(e) => setServer(e.target.value)}
             />

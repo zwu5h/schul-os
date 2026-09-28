@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import {
+  DEFAULT_SCHOOL_SUGGESTION,
   classifyTimetableError,
   mapSchoolSearchResponse,
   normalizeSchool,
@@ -31,6 +32,27 @@ test("school input accepts identifiers and pasted portal urls", () => {
   ).toBe("brg-muster");
   expect(normalizeSchool("BRG Musterstadt")).toBeNull();
   expect(normalizeSchool("")).toBeNull();
+});
+
+test("neusiedl default suggestion is connection-ready", () => {
+  expect(normalizeServer(DEFAULT_SCHOOL_SUGGESTION.server)).toBe(
+    "gymnasium-neusiedl.webuntis.com",
+  );
+  expect(normalizeSchool(DEFAULT_SCHOOL_SUGGESTION.loginName)).toBe(
+    "gymnasium-neusiedl",
+  );
+  expect(
+    mapSchoolSearchResponse({
+      result: {
+        schools: [
+          {
+            ...DEFAULT_SCHOOL_SUGGESTION,
+            server: `https://${DEFAULT_SCHOOL_SUGGESTION.server}/`,
+          },
+        ],
+      },
+    }),
+  ).toEqual([DEFAULT_SCHOOL_SUGGESTION]);
 });
 
 test("username is trimmed and required", () => {

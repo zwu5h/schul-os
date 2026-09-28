@@ -59,6 +59,18 @@ const schoolSuggestion = z.object({
 
 export type SchoolSuggestion = z.infer<typeof schoolSuggestion>;
 
+/** Voreingestellte Schule: BG/BRG Neusiedl/See.
+ * Gegen das öffentliche WebUntis-Verzeichnis geprüft (schoolId 7003300):
+ * Server + Schulkürzel stehen damit ohne Suche bereit, nur die
+ * persönlichen Zugangsdaten müssen noch eingetragen werden.
+ */
+export const DEFAULT_SCHOOL_SUGGESTION: SchoolSuggestion = {
+  server: "gymnasium-neusiedl.webuntis.com",
+  loginName: "gymnasium-neusiedl",
+  displayName: "BG/BRG Neusiedl/See",
+  address: "7100, Neusiedl am See, Bundesschulstraße 3",
+};
+
 const schoolSearchResponse = z.object({
   result: z
     .object({ schools: z.array(z.unknown()).default([]) })
