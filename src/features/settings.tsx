@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Download, Moon, Sun, ExternalLink, Upload } from "lucide-react";
-import { entries, clear } from "idb-keyval";
+import { entries, clear, workspaceKey, userStorageKey } from "@/lib/local-data";
 import { useWorkspace } from "@/lib/store";
 import { entity, type Lesson } from "@/types/school";
 import { parseTimetableJson, type TimetableEntry } from "@/providers/school";
@@ -169,7 +169,7 @@ export function Settings() {
           className="button"
           onClick={async () => {
             try {
-              const raw = localStorage.getItem("school-os-v1");
+              const raw = localStorage.getItem(workspaceKey());
               const stored = await entries();
               const blobs = await Promise.all(
                 stored.map(async ([key, value]) => ({
@@ -298,7 +298,7 @@ export function WebUntis() {
       return { server: "", school: "", username: "" };
     try {
       const data = JSON.parse(
-        localStorage.getItem("webuntis-connection") || "{}",
+        localStorage.getItem(userStorageKey("webuntis-connection")) || "{}",
       );
       return {
         server: typeof data.server === "string" ? data.server : "",
@@ -442,7 +442,7 @@ export function WebUntis() {
       // Nur Server, Kürzel und Benutzer merken – nie das Passwort.
       try {
         localStorage.setItem(
-          "webuntis-connection",
+          userStorageKey("webuntis-connection"),
           JSON.stringify({
             server: server.trim(),
             school: schoolName.trim(),

@@ -13,7 +13,7 @@ import {
   Upload,
   ArrowUpRight,
 } from "lucide-react";
-import { get, set, del } from "idb-keyval";
+import { get, set, del } from "@/lib/local-data";
 import type { ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 import { trackDelete, useWorkspace } from "@/lib/store";
 import { entity, type Board } from "@/types/school";

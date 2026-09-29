@@ -55,6 +55,60 @@ const webUntisPeriod = z.object({
   code: z.string().optional(),
 });
 
+/** Einträge chronologisch ordnen: WebUntis liefert keine garantierte
+ * Reihenfolge, die Anzeige erwartet aber aufsteigende Startzeiten.
+ */
+export function sortTimetableEntries(
+  entries: TimetableEntry[],
+): TimetableEntry[] {
+  return [...entries].sort(
+    (a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end),
+  );
+}
+
+export type TimetableGapKind = "pause" | "big-break" | "free";
+
+export interface TimetableGap {
+  minutes: number;
+  kind: TimetableGapKind;
+}
+
+/** Lücke zwischen zwei Stunden bestimmen: Minuten zwischen dem Ende der
+ * vorherigen und dem Beginn der nächsten Stunde. Gibt `null` zurück, wenn
+ * es keine Lücke gibt (direkter Übergang oder Überlappung).
+ * Bis 10 Minuten gilt als kurze Pause, bis 25 als große Pause, darüber als
+ * Freistunde.
+ */
+export function gapBetweenLessons(
+  prevEnd: string,
+  nextStart: string,
+): TimetableGap | null {
+  const toMs = (value: string) => {
+    const normalized = value.length === 16 ? `${value}:00` : value;
+    return new Date(normalized).getTime();
+  };
+  const prev = toMs(prevEnd);
+  const next = toMs(nextStart);
+  if (Number.isNaN(prev) || Number.isNaN(next)) return null;
+  const minutes = Math.round((next - prev) / 60000);
+  if (minutes <= 0) return null;
+  if (minutes <= 10) return { minutes, kind: "pause" };
+  if (minutes <= 25) return { minutes, kind: "big-break" };
+  return { minutes, kind: "free" };
+}
+
+/** Beschriftung für eine Lücke zwischen zwei Stunden. */
+export function gapLabel(gap: TimetableGap): string {
+  switch (gap.kind) {
+    case "pause":
+      return `Pause · ${gap.minutes} Min`;
+    case "big-break":
+      return `Große Pause · ${gap.minutes} Min`;
+    case "free":
+      return `Freistunde · ${gap.minutes} Min`;
+  }
+}
+
 /** WebUntis-Perioden (Datum JJJJMMTT, Zeit HHMM) ins Import-Format bringen.
  * Ungültige Einträge werden übersprungen statt den ganzen Abruf zu
  * verwerfen; kein gültiges Datum, keine gültige Zeit, kein Fach.
@@ -93,7 +147,7 @@ export function normalizeWebUntisLessons(periods: unknown): TimetableEntry[] {
             : "regular",
     });
   }
-  return out;
+  return sortTimetableEntries(out);
 }
 
 export function parseTimetableJson(text: string): TimetableParse {
@@ -119,5 +173,5 @@ export function parseTimetableJson(text: string): TimetableParse {
     .slice(0, 5)
     .map(({ i }) => `Stunde ${i + 1}: Ende muss nach Beginn liegen.`);
   if (orderErrors.length) return { ok: false, errors: orderErrors };
-  return { ok: true, entries: parsed.data.lessons };
+  return { ok: true, entries: sortTimetableEntries(parsed.data.lessons) };
 }

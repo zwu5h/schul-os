@@ -1,6 +1,6 @@
 "use client";
 import { create } from "zustand";
-import { get as idbGet, set as idbSet } from "idb-keyval";
+import { get as idbGet, set as idbSet } from "./local-data";
 import { getSupabase, isCloudEnabled } from "./supabase";
 import { useWorkspace } from "./store";
 import { useAuth } from "./auth";

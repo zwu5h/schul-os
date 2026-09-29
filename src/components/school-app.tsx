@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
   ArrowLeft,
@@ -23,6 +24,8 @@ import {
 } from "lucide-react";
 import { useWorkspace } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
+import { authClient } from "@/lib/auth-client";
+import { setLocalUser, workspaceKey } from "@/lib/local-data";
 import { initAutoSync } from "@/lib/sync";
 import { demoWorkspace, emptyWorkspace } from "@/lib/demo";
 import { entity, type View } from "@/types/school";
@@ -75,7 +78,8 @@ const titles: Record<View, string> = {
   settings: "Einstellungen",
   webuntis: "WebUntis",
 };
-export function SchoolApp() {
+export function SchoolApp({ userId }: { userId: string }) {
+  const router = useRouter();
   const w = useWorkspace();
   const [view, setView] = useState<View>("canvas");
   const [subjectId, setSubjectId] = useState<string | null>(null);
@@ -90,6 +94,8 @@ export function SchoolApp() {
   const [notice, setNotice] = useState("");
   const [quick, setQuick] = useState(false);
   useEffect(() => {
+    setLocalUser(userId);
+    useWorkspace.persist.setOptions({ name: workspaceKey() });
     void Promise.resolve(useWorkspace.persist.rehydrate()).finally(() =>
       useWorkspace.getState().hydrate(),
     );
@@ -103,7 +109,7 @@ export function SchoolApp() {
       window.removeEventListener("online", sync);
       window.removeEventListener("offline", sync);
     };
-  }, []);
+  }, [userId]);
   useEffect(() => {
     document.documentElement.dataset.theme = w.theme;
   }, [w.theme]);
@@ -312,6 +318,11 @@ export function SchoolApp() {
           </span>
           <ChevronDown size={13} />
         </button>
+        <button className="search-button" onClick={async () => {
+          await authClient.signOut();
+          router.replace("/login");
+          router.refresh();
+        }}>Abmelden</button>
         <button className="search-button" onClick={() => setSearch(true)}>
           <Search size={15} />
           <span>Suchen</span>

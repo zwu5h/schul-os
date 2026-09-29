@@ -6,6 +6,7 @@
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1",
+    "migrate": "node scripts/migrate.mjs",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test"
@@ -16,6 +17,8 @@
     "@tiptap/extension-placeholder": "^3.31.3",
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
+    "better-auth": "^1.7.6",
+    "better-sqlite3": "^13.0.3",
     "idb-keyval": "^6.3.0",
     "katex": "^0.18.9",
     "lucide-react": "^1.48.0",
@@ -34,6 +37,7 @@
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

@@ -10,7 +10,7 @@ import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
-import { get, set } from "idb-keyval";
+import { get, set } from "@/lib/local-data";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,

@@ -1,4 +1,5 @@
 "use client";
+import { Fragment } from "react";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -13,7 +14,18 @@ import {
 } from "lucide-react";
 import { useWorkspace } from "@/lib/store";
 import { localDate, type View, type Task } from "@/types/school";
+import {
+  gapBetweenLessons,
+  gapLabel,
+  type TimetableGapKind,
+} from "@/providers/school";
 import { Empty, SectionTitle } from "@/components/ui";
+
+const gapClass: Record<TimetableGapKind, string> = {
+  pause: "gap-pause",
+  "big-break": "gap-big",
+  free: "gap-free",
+};
 export function TaskRow({ task }: { task: Task }) {
   const w = useWorkspace();
   const subject = w.subjects.find((s) => s.id === task.subjectId);
@@ -172,10 +184,22 @@ export function Dashboard({
             {lessons.length ? (
               lessons.map((l, i) => {
                 const s = w.subjects.find((s) => s.id === l.subjectId);
+                const gap =
+                  i > 0
+                    ? gapBetweenLessons(lessons[i - 1].end, l.start)
+                    : null;
                 return (
+                  <Fragment key={l.id}>
+                    {gap && (
+                      <div
+                        className={`lesson-gap ${gapClass[gap.kind]}`}
+                        aria-label={gapLabel(gap)}
+                      >
+                        <span>{gapLabel(gap)}</span>
+                      </div>
+                    )}
                   <button
                     className={`lesson ${upcoming?.id === l.id ? "current" : ""}`}
-                    key={l.id}
                     onClick={() => go("subjects", l.subjectId)}
                   >
                     <div className="lesson-time">
@@ -200,6 +224,7 @@ export function Dashboard({
                       <ArrowUpRight size={15} />
                     )}
                   </button>
+                  </Fragment>
                 );
               })
             ) : (

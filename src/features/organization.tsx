@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -9,8 +9,19 @@ import {
 } from "lucide-react";
 import { trackDelete, useWorkspace } from "@/lib/store";
 import { entity, localDate, type Flashcard } from "@/types/school";
+import {
+  gapBetweenLessons,
+  gapLabel,
+  type TimetableGapKind,
+} from "@/providers/school";
 import { Empty, Modal } from "@/components/ui";
 import { TaskRow } from "./dashboard";
+
+const gapClass: Record<TimetableGapKind, string> = {
+  pause: "gap-pause",
+  "big-break": "gap-big",
+  free: "gap-free",
+};
 export function Tasks({
   subjectId,
   create,
@@ -149,6 +160,12 @@ export function Calendar({ create }: { create: () => void }) {
       <div className="calendar-grid">
         {days.map((d) => {
           const key = localDate(d);
+          const dayLessons = w.lessons
+            .filter((l) => l.start.startsWith(key))
+            .sort(
+              (a, b) =>
+                a.start.localeCompare(b.start) || a.end.localeCompare(b.end),
+            );
           return (
             <div
               className={`calendar-day ${key === localDate() ? "is-today" : ""}`}
@@ -160,26 +177,40 @@ export function Calendar({ create }: { create: () => void }) {
                 </small>
                 <strong>{d.getDate()}</strong>
               </header>
-              {w.lessons
-                .filter((l) => l.start.startsWith(key))
-                .map((l) => (
-                  <div
-                    className="calendar-event"
-                    key={l.id}
-                    style={{
-                      borderColor: w.subjects.find((s) => s.id === l.subjectId)
-                        ?.color,
-                    }}
-                  >
-                    <small>
-                      {l.start.slice(11)}–{l.end.slice(11)}
-                    </small>
-                    <strong>
-                      {w.subjects.find((s) => s.id === l.subjectId)?.name}
-                    </strong>
-                    <small>Raum {l.room}</small>
-                  </div>
-                ))}
+              {dayLessons.map((l, i) => {
+                const gap =
+                  i > 0
+                    ? gapBetweenLessons(dayLessons[i - 1].end, l.start)
+                    : null;
+                return (
+                  <Fragment key={l.id}>
+                    {gap && (
+                      <div
+                        className={`calendar-gap ${gapClass[gap.kind]}`}
+                        aria-label={gapLabel(gap)}
+                      >
+                        <span>{gapLabel(gap)}</span>
+                      </div>
+                    )}
+                    <div
+                      className="calendar-event"
+                      style={{
+                        borderColor: w.subjects.find(
+                          (s) => s.id === l.subjectId,
+                        )?.color,
+                      }}
+                    >
+                      <small>
+                        {l.start.slice(11)}–{l.end.slice(11)}
+                      </small>
+                      <strong>
+                        {w.subjects.find((s) => s.id === l.subjectId)?.name}
+                      </strong>
+                      <small>Raum {l.room}</small>
+                    </div>
+                  </Fragment>
+                );
+              })}
               {w.tasks
                 .filter((t) => t.due === key)
                 .map((t) => (

@@ -1,4 +1,5 @@
 import { WebUntis } from "webuntis";
+import { auth } from "@/lib/server-auth";
 import { z } from "zod";
 import { normalizeWebUntisLessons } from "@/providers/school";
 import {
@@ -52,6 +53,8 @@ function tooLarge(request: Request, body: string): boolean {
 
 /** Öffentliche Schulsuche ohne Login: liefert Server + Schulkürzel. */
 export async function GET(request: Request) {
+  if (!(await auth.api.getSession({ headers: request.headers })))
+    return Response.json({ error: "Anmeldung erforderlich." }, { status: 401 });
   if (!sameOrigin(request))
     return Response.json({ error: "Anfrage abgelehnt." }, { status: 403 });
   const query =
@@ -95,6 +98,8 @@ export async function GET(request: Request) {
  * Das Passwort lebt nur in dieser Anfrage und wird nie gespeichert.
  */
 export async function POST(request: Request) {
+  if (!(await auth.api.getSession({ headers: request.headers })))
+    return Response.json({ error: "Anmeldung erforderlich." }, { status: 401 });
   if (!sameOrigin(request))
     return Response.json({ error: "Anfrage abgelehnt." }, { status: 403 });
   const body = await request.text();

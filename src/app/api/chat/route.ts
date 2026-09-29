@@ -1,4 +1,5 @@
 import { GroqProvider } from "@/providers/groq";
+import { auth } from "@/lib/server-auth";
 import { z } from "zod";
 export const runtime = "nodejs";
 const input = z.object({
@@ -15,16 +16,16 @@ const input = z.object({
 });
 const requests: number[] = [];
 export async function POST(request: Request) {
+  if (!(await auth.api.getSession({ headers: request.headers })))
+    return Response.json({ error: "Anmeldung erforderlich." }, { status: 401 });
   const host = request.headers.get("host") || "";
   const origin = request.headers.get("origin");
-  // Local single-user MVP: never expose the server-owned key on a public deployment.
   if (
-    !/^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(host) ||
     (origin !== `http://${host}` && origin !== `https://${host}`) ||
     request.headers.get("sec-fetch-site") === "cross-site"
   )
     return Response.json(
-      { error: "KI ist in diesem MVP nur lokal verfügbar." },
+      { error: "Anfrage abgelehnt." },
       { status: 403 },
     );
   if (!process.env.GROQ_API_KEY)

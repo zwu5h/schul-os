@@ -7,7 +7,12 @@ import {
   normalizeServer,
   normalizeUsername,
 } from "../src/lib/webuntis";
-import { normalizeWebUntisLessons } from "../src/providers/school";
+import {
+  gapBetweenLessons,
+  gapLabel,
+  normalizeWebUntisLessons,
+  parseTimetableJson,
+} from "../src/providers/school";
 
 test("server input is normalized instead of rejected", () => {
   expect(normalizeServer("mese.webuntis.com")).toBe("mese.webuntis.com");
@@ -155,6 +160,93 @@ test("school search api validates input and origin", async ({ request }) => {
     headers: { Origin: "https://untrusted.example" },
   });
   expect(cross.status()).toBe(403);
+});
+
+test("webuntis periods are sorted chronologically", () => {
+  const lessons = normalizeWebUntisLessons([
+    {
+      date: 20260929,
+      startTime: 955,
+      endTime: 1045,
+      su: [{ name: "E" }],
+      te: [],
+      ro: [],
+    },
+    {
+      date: 20260929,
+      startTime: 800,
+      endTime: 850,
+      su: [{ name: "M" }],
+      te: [],
+      ro: [],
+    },
+    {
+      date: 20260928,
+      startTime: 800,
+      endTime: 850,
+      su: [{ name: "D" }],
+      te: [],
+      ro: [],
+    },
+  ]);
+  expect(lessons.map((l) => l.start)).toEqual([
+    "2026-09-28T08:00",
+    "2026-09-29T08:00",
+    "2026-09-29T09:55",
+  ]);
+});
+
+test("timetable json import is sorted chronologically", () => {
+  const result = parseTimetableJson(
+    JSON.stringify({
+      lessons: [
+        {
+          subject: "Englisch",
+          start: "2026-09-29T09:55",
+          end: "2026-09-29T10:45",
+        },
+        {
+          subject: "Mathematik",
+          start: "2026-09-29T08:00",
+          end: "2026-09-29T08:50",
+        },
+      ],
+    }),
+  );
+  expect(result.ok).toBe(true);
+  if (result.ok)
+    expect(result.entries.map((e) => e.subject)).toEqual([
+      "Mathematik",
+      "Englisch",
+    ]);
+});
+
+test("gaps between lessons are classified as pause or free period", () => {
+  expect(gapBetweenLessons("2026-09-29T08:50", "2026-09-29T08:55")).toEqual({
+    minutes: 5,
+    kind: "pause",
+  });
+  expect(gapBetweenLessons("2026-09-29T09:45", "2026-09-29T10:00")).toEqual({
+    minutes: 15,
+    kind: "big-break",
+  });
+  expect(gapBetweenLessons("2026-09-29T08:00", "2026-09-29T09:50")).toEqual({
+    minutes: 110,
+    kind: "free",
+  });
+  expect(
+    gapBetweenLessons("2026-09-29T08:00", "2026-09-29T08:00"),
+  ).toBeNull();
+  expect(
+    gapBetweenLessons("2026-09-29T09:00", "2026-09-29T08:00"),
+  ).toBeNull();
+  expect(gapLabel({ minutes: 5, kind: "pause" })).toBe("Pause · 5 Min");
+  expect(gapLabel({ minutes: 15, kind: "big-break" })).toBe(
+    "Große Pause · 15 Min",
+  );
+  expect(gapLabel({ minutes: 110, kind: "free" })).toBe(
+    "Freistunde · 110 Min",
+  );
 });
 
 test("timetable accepts pasted urls instead of rejecting them", async ({

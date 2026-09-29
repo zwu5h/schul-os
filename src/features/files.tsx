@@ -1,5 +1,5 @@
 "use client";
-import { get, set, del } from "idb-keyval";
+import { get, set, del } from "@/lib/local-data";
 import Image from "next/image";
 import { useRef, useState } from "react";
 import { Upload, File, Download, Trash2 } from "lucide-react";

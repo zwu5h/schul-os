@@ -1,4 +1,17 @@
 @import "tailwindcss";
+.auth-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.auth-card { width: min(100%, 420px); padding: 36px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); }
+.auth-brand { display: inline-block; margin-bottom: 30px; font-size: 23px; font-weight: 700; letter-spacing: -1px; }
+.auth-brand span { color: #789445; }
+.auth-card h1 { margin-bottom: 8px; }
+.auth-card > .muted { margin-bottom: 28px; }
+.auth-card .form { display: grid; gap: 16px; }
+.auth-card label { display: grid; gap: 7px; font-weight: 600; }
+.auth-card input { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--ink); }
+.auth-card .button { justify-content: center; padding: 12px; }
+.auth-switch { margin-top: 24px; text-align: center; }
+.auth-switch a { text-decoration: underline; }
+.auth-error { color: #b33a3a; }
 :root {
   --bg: #fafbf9;
   --surface: #fff;
@@ -658,6 +671,51 @@ nav > button small {
 }
 .lesson > svg {
   color: #a8b29d;
+}
+.lesson-gap,
+.calendar-gap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+.lesson-gap::before,
+.lesson-gap::after,
+.calendar-gap::before,
+.calendar-gap::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed var(--line);
+}
+.lesson-gap span,
+.calendar-gap span {
+  background: var(--hover);
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+.lesson-gap.gap-pause {
+  padding: 2px 0;
+}
+.lesson-gap.gap-big {
+  padding: 9px 0;
+}
+.lesson-gap.gap-free {
+  padding: 16px 0;
+}
+.calendar-gap {
+  font-size: 8px;
+  gap: 6px;
+}
+.calendar-gap.gap-pause {
+  margin: 3px 0;
+}
+.calendar-gap.gap-big {
+  margin: 8px 0;
+}
+.calendar-gap.gap-free {
+  margin: 14px 0;
 }
 .pill {
   font-size: 9px;
