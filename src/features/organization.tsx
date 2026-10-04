@@ -5,16 +5,15 @@ import {
   ChevronRight,
   Plus,
   Trash2,
-  Upload,
 } from "lucide-react";
 import { trackDelete, useWorkspace } from "@/lib/store";
-import { entity, localDate, type Flashcard } from "@/types/school";
+import { localDate } from "@/types/school";
 import {
   gapBetweenLessons,
   gapLabel,
   type TimetableGapKind,
 } from "@/providers/school";
-import { Empty, Modal } from "@/components/ui";
+import { Empty } from "@/components/ui";
 import { TaskRow } from "./dashboard";
 
 const gapClass: Record<TimetableGapKind, string> = {
@@ -248,169 +247,4 @@ export function Calendar({ create }: { create: () => void }) {
     </>
   );
 }
-export function Learn({
-  subjectId,
-  create,
-}: {
-  subjectId: string | null;
-  create: () => void;
-}) {
-  const w = useWorkspace();
-  const cards = w.flashcards.filter(
-    (c) => !subjectId || c.subjectId === subjectId,
-  );
-  const [index, setIndex] = useState(0);
-  const [back, setBack] = useState(false);
-  const [showImport, setShowImport] = useState(false);
-  const [importText, setImportText] = useState("");
-  const [importResult, setImportResult] = useState("");
-  const card = cards[index % Math.max(1, cards.length)];
-  function importList() {
-    const lines = importText.split("\n").slice(0, 200);
-    const fresh: Flashcard[] = [];
-    let skipped = 0;
-    for (const line of lines) {
-      const raw = line.trim();
-      if (!raw) continue;
-      const sep = raw.indexOf("|");
-      const front = (sep >= 0 ? raw.slice(0, sep) : "").trim();
-      const backText = (sep >= 0 ? raw.slice(sep + 1) : "").trim();
-      if (!front || !backText) {
-        skipped += 1;
-        continue;
-      }
-      fresh.push({
-        ...entity(),
-        front: front.slice(0, 500),
-        back: backText.slice(0, 2000),
-        subjectId,
-        known: false,
-      });
-    }
-    if (!fresh.length) {
-      setImportResult(
-        "Keine gültige Zeile gefunden. Format: Frage | Antwort",
-      );
-      return;
-    }
-    const latest = useWorkspace.getState();
-    latest.patch({ flashcards: [...latest.flashcards, ...fresh] });
-    setImportText("");
-    setImportResult(
-      `${fresh.length} ${fresh.length === 1 ? "Karte" : "Karten"} importiert` +
-        (skipped ? ` · ${skipped} Zeilen übersprungen` : ""),
-    );
-  }
-  return (
-    <>
-      <div className="view-actions">
-        <span>
-          {cards.filter((c) => c.known).length} von {cards.length} Karten
-          gelernt
-        </span>
-        <button className="button" onClick={() => setShowImport(true)}>
-          <Upload size={16} /> Liste importieren
-        </button>
-        <button className="button primary" onClick={create}>
-          <Plus size={16} /> Lernkarte
-        </button>
-      </div>
-      {showImport && (
-        <Modal title="Liste importieren" close={() => setShowImport(false)}>
-          <form
-            className="form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              importList();
-            }}
-          >
-            <div className="field">
-              <label htmlFor="flashcard-import">Karteikarten-Liste</label>
-              <textarea
-                id="flashcard-import"
-                rows={8}
-                value={importText}
-                onChange={(e) => setImportText(e.target.value)}
-                placeholder={"Fotosynthese | braucht Licht\nZellkern | steuert die Zelle"}
-              />
-            </div>
-            <p className="muted">
-              Eine Karte pro Zeile, Format: Frage | Antwort. Maximal 200
-              Zeilen.
-            </p>
-            <button className="button primary" type="submit">
-              Importieren
-            </button>
-            {importResult && (
-              <p className="muted" role="status">
-                {importResult}
-              </p>
-            )}
-          </form>
-        </Modal>
-      )}
-      {card ? (
-        <div className="learning">
-          <span className="eyebrow">
-            KARTE {(index % cards.length) + 1} / {cards.length}
-          </span>
-          <button className="flashcard" onClick={() => setBack(!back)}>
-            <small>{back ? "ANTWORT" : "FRAGE"}</small>
-            <h2>{back ? card.back : card.front}</h2>
-            <span>Zum Umdrehen klicken</span>
-          </button>
-          <div className="learning-actions">
-            <button
-              className="button"
-              onClick={() => {
-                w.patch({
-                  flashcards: w.flashcards.map((c) =>
-                    c.id === card.id ? { ...c, known: false } : c,
-                  ),
-                });
-                setIndex(index + 1);
-                setBack(false);
-              }}
-            >
-              Noch üben
-            </button>
-            <button
-              className="button primary"
-              onClick={() => {
-                w.patch({
-                  flashcards: w.flashcards.map((c) =>
-                    c.id === card.id ? { ...c, known: true } : c,
-                  ),
-                });
-                setIndex(index + 1);
-                setBack(false);
-              }}
-            >
-              Gewusst
-            </button>
-            <button
-              className="icon-button"
-              title="Lernkarte löschen"
-              onClick={() => {
-                if (confirm("Lernkarte löschen?")) {
-                  w.patch({
-                    flashcards: w.flashcards.filter((c) => c.id !== card.id),
-                  });
-                  trackDelete(card.id);
-                  setBack(false);
-                }
-              }}
-            >
-              <Trash2 size={16} />
-            </button>
-          </div>
-        </div>
-      ) : (
-        <Empty
-          title="Wissen, das bleibt"
-          description="Erstelle deine erste Lernkarte und wiederhole in deinem Tempo."
-        />
-      )}
-    </>
-  );
-}
+export { Learn } from "./learn";
