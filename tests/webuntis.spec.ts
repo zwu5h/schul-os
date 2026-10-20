@@ -295,14 +295,21 @@ test("live timetable preview imports subjects and lessons without storing the pa
       localStorage.setItem("school-os-v1", JSON.stringify({ state: workspace, version: 0 }));
   }, { ...emptyWorkspace(), onboarded: true, lessons: [preserved, manual] });
   let mode: "success" | "empty" | "failure" = "success";
+  let mobileMode = false;
+  let liveRequests = 0;
   await page.route("**/api/webuntis?**", (route) => route.fulfill({ json: { schools: [{
     server: "gymnasium-neusiedl.webuntis.com", loginName: "gymnasium-neusiedl", displayName: "BG/BRG Neusiedl/See", address: "Neusiedl am See",
   }] } }));
   await page.route("**/api/webuntis", async (route) => {
+    liveRequests++;
     expect(route.request().postDataJSON()).toMatchObject({
       server: "gymnasium-neusiedl.webuntis.com", school: "gymnasium-neusiedl",
-      username: "student", password: "private-untis-password",
+      username: "student",
     });
+    expect(route.request().postDataJSON()).toMatchObject(mobileMode
+      ? { authMethod: "mobile", mobileSecret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" }
+      : { password: "private-untis-password" });
+    if (mobileMode) expect(route.request().postDataJSON().password).toBeUndefined();
     if (mode === "failure") { await route.fulfill({ status: 403, json: { error: "Der API-Zugriff ist für diesen Zugang nicht freigeschaltet." } }); return; }
     await route.fulfill({ json: { lessons: mode === "empty" ? [] : [
       { subject: "Mathematik", start: "2026-10-20T08:00", end: "2026-10-20T08:50", room: "B207", teacher: "HUB", status: "changed" },
@@ -363,5 +370,24 @@ test("live timetable preview imports subjects and lessons without storing the pa
   await page.getByLabel("Stundenplan-JSON").fill('{"lessons":[{"subject":"Test","start":"2026-02-30T08:00","end":"2026-02-30T08:50"}]}');
   await page.getByRole("button", { name: "Datei prüfen" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "gültiges Datum" })).toBeVisible();
+  await page.getByRole("button", { name: "Untis Mobile / SSO", exact: true }).click();
+  await expect(page.getByText("Für Microsoft- und Schulportal-Anmeldung", { exact: true })).toBeVisible();
+  await expect(page.locator("#live-password")).toHaveCount(0);
+  const requestsBeforeQr = liveRequests;
+  await page.getByLabel("Untis-Mobile-QR-Code als Bild").setInputFiles("tests/fixtures/webuntis-mobile.png");
+  await expect(page.getByRole("status").filter({ hasText: "QR-Code eingelesen" })).toBeVisible();
+  await expect(page.getByLabel("Untis-Mobile-Schlüssel", { exact: true })).toHaveValue("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ");
+  await expect(page.getByLabel("Untis-Mobile-Schlüssel", { exact: true })).toHaveAttribute("type", "password");
+  expect(liveRequests).toBe(requestsBeforeQr);
+  expect(page.url()).not.toContain("GEZDGNBV");
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.screenshot({ path: "test-results/webuntis-mobile-auth.png", fullPage: true, animations: "disabled" });
+  mode = "success"; mobileMode = true;
+  await page.getByRole("button", { name: "Stundenplan abrufen", exact: true }).click();
+  await expect(page.getByText("3 Stunden bereit", { exact: false })).toBeVisible();
+  await expect(page.getByLabel("Untis-Mobile-Schlüssel", { exact: true })).toHaveValue("");
+  const finalStorage = await page.evaluate(() => JSON.stringify({ ...localStorage }));
+  expect(finalStorage).not.toContain("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ");
+  expect(finalStorage).not.toContain("private-untis-password");
   expect(browserErrors).toEqual([]);
 });

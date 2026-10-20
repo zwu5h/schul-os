@@ -9,18 +9,23 @@ import {
   normalizeServer,
   isWebUntisServer,
   normalizeUsername,
+  normalizeMobileSecret,
   searchSchools,
 } from "@/lib/webuntis";
 
 export const runtime = "nodejs";
 
-const timetableInput = z.object({
+const commonInput = {
   server: z.string().min(1).max(200),
   school: z.string().min(1).max(200),
   username: z.string().min(1).max(80),
-  password: z.string().min(1).max(200),
   days: z.number().int().min(1).max(14).default(7),
-});
+};
+const timetableInput = z.union([
+  z.object({ ...commonInput, authMethod: z.literal("password").default("password"), password: z.string().min(1).max(200) }),
+  z.object({ ...commonInput, authMethod: z.literal("mobile"), mobileSecret: z.string().min(16).max(512)
+    .transform((value) => normalizeMobileSecret(value)).refine((value) => value !== null) }),
+]);
 
 const timetableRequests = new Map<string, number[]>();
 const searchRequests = new Map<string, number[]>();
@@ -121,7 +126,7 @@ export async function POST(request: Request) {
   }
   if (!parsed.success)
     return Response.json(
-      { error: "Bitte Server, Schule, Benutzer und Passwort prüfen." },
+      { error: "Bitte Server, Schule, Benutzer und die gewählte Anmeldemethode prüfen." },
       { status: 400 },
     );
   // Eingefügte URLs ("https://…/WebUntis/?school=…") auf Host + Kürzel
@@ -141,7 +146,9 @@ export async function POST(request: Request) {
     );
   try {
     const result = await fetchWebUntisTimetable(
-      { ...parsed.data, server, school, username },
+      parsed.data.authMethod === "mobile"
+        ? { ...parsed.data, server, school, username, mobileSecret: parsed.data.mobileSecret! }
+        : { ...parsed.data, server, school, username },
       { signal: request.signal },
     );
     return Response.json(result, { headers: { "Cache-Control": "no-store" } });

@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { fetchWebUntisTimetable, webUntisDateRange } from "../src/lib/webuntis-client";
-import { classifyTimetableError, isWebUntisServer, normalizeSchool } from "../src/lib/webuntis";
+import { classifyTimetableError, isWebUntisServer, normalizeSchool, normalizeMobileSecret, parseWebUntisQr } from "../src/lib/webuntis";
+import { generateWebUntisOtp } from "../src/lib/webuntis-otp";
 
 const credentials = {
   server: "mese.webuntis.com", school: "test-schule", username: "student",
@@ -102,4 +103,71 @@ test("reject untrusted credential destinations and malformed school URLs", async
 test("range follows Austrian school dates across midnight and daylight saving changes", () => {
   expect(webUntisDateRange(7, new Date("2026-10-20T22:30:00Z"))).toEqual({ startDate: 20261021, endDate: 20261027 });
   expect(webUntisDateRange(14, new Date("2026-10-24T22:30:00Z"))).toEqual({ startDate: 20261025, endDate: 20261107 });
+});
+
+const mobileSecret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"; // Public RFC 6238 test secret, never a real account.
+
+test("Untis Mobile OTP matches the RFC 6238 SHA-1 reference vectors", () => {
+  for (const [seconds, code] of [[59, "287082"], [1111111109, "081804"], [1111111111, "050471"], [1234567890, "005924"], [2000000000, "279037"], [20000000000, "353130"]] as const)
+    expect(generateWebUntisOtp(mobileSecret, seconds * 1000)).toBe(code);
+  expect(normalizeMobileSecret("gezd gnbv-gy3tqojq==")).toBe("GEZDGNBVGY3TQOJQ");
+  expect(normalizeMobileSecret("not-a-microsoft-password!")).toBeNull();
+});
+
+test("QR data validates the school host and never accepts arbitrary credential destinations", () => {
+  const link = `untis://setschool?url=mese.webuntis.com&school=test-schule&user=student&key=${mobileSecret}`;
+  expect(parseWebUntisQr(link)).toEqual({ server: "mese.webuntis.com", school: "test-schule", username: "student", mobileSecret });
+  for (const raw of [link.replace("mese.webuntis.com", "evil.example"), link.replace("mese.webuntis.com", "127.0.0.1"), link.replace("untis:", "https:"), link.replace(mobileSecret, "bad-password"), "https://mese.webuntis.com/WebUntis/?school=test-schule"])
+    expect(parseWebUntisQr(raw)).toBeNull();
+});
+
+test("mobile auth exchanges only an OTP, loads the person and releases the authenticated session", async () => {
+  const methods: string[] = [];
+  const transport: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const headers = new Headers(init?.headers);
+    expect(url.hostname).toBe("mese.webuntis.com");
+    expect(init?.redirect).toBe("error");
+    expect(init?.cache).toBe("no-store");
+    if (url.pathname === "/WebUntis/api/app/config") {
+      methods.push("config"); expect(headers.get("cookie")).toContain("JSESSIONID=MOBILE-123");
+      return Response.json({ data: { loginServiceConfig: { user: { personId: 42, persons: [{ id: 42, type: 5 }] } } } });
+    }
+    const body = JSON.parse(String(init?.body));
+    methods.push(body.method);
+    expect(String(init?.body)).not.toContain(mobileSecret);
+    expect(String(init?.body)).not.toContain("password");
+    if (body.method === "getUserData2017") {
+      expect(url.pathname).toBe("/WebUntis/jsonrpc_intern.do");
+      expect(url.searchParams.get("m")).toBe("getUserData2017");
+      expect(url.searchParams.get("school")).toBe("test-schule");
+      expect(body.params).toEqual([{ auth: { clientTime: 59000, user: "student", otp: "287082" } }]);
+      return Response.json({ jsonrpc: "2.0", id: body.id, result: {} }, { headers: { "set-cookie": "JSESSIONID=MOBILE-123; Path=/WebUntis; Secure; HttpOnly" } });
+    }
+    expect(headers.get("cookie")).toContain("JSESSIONID=MOBILE-123");
+    if (body.method === "getTimetable") expect(body.params.options.element).toEqual({ id: 42, type: 5 });
+    return Response.json({ jsonrpc: "2.0", id: body.id, result: body.method === "logout" ? null : [] });
+  };
+  const result = await fetchWebUntisTimetable({ server: "mese.webuntis.com", school: "test-schule", username: "student", days: 7, authMethod: "mobile", mobileSecret }, { fetch: transport, now: new Date(59000) });
+  expect(methods).toEqual(["getUserData2017", "config", "getTimetable", "logout"]);
+  expect(result.lessons).toEqual([]);
+  expect(JSON.stringify(result)).not.toContain("MOBILE-123");
+});
+
+test("failed mobile-person lookup still logs out; rejected keys stay out of errors", async () => {
+  for (const reject of [false, true]) {
+    const methods: string[] = [];
+    const transport: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/WebUntis/api/app/config") { methods.push("config"); return Response.json({ data: {} }); }
+      const body = JSON.parse(String(init?.body)); methods.push(body.method);
+      return Response.json({ jsonrpc: "2.0", id: body.id, ...(reject && body.method === "getUserData2017"
+        ? { error: { code: -8504, message: `invalid otp for ${mobileSecret}` } } : { result: {} }) },
+      { headers: body.method === "getUserData2017" ? { "set-cookie": "JSESSIONID=MOBILE-123; Path=/" } : {} });
+    };
+    const error = await fetchWebUntisTimetable({ server: "mese.webuntis.com", school: "test-schule", username: "student", days: 7, authMethod: "mobile", mobileSecret }, { fetch: transport }).catch((error: unknown) => error);
+    expect(classifyTimetableError(error).status).toBe(reject ? 401 : 403);
+    expect(methods.at(-1)).toBe("logout");
+    expect(JSON.stringify(classifyTimetableError(error))).not.toContain(mobileSecret);
+  }
 });

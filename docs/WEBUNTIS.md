@@ -23,14 +23,30 @@ Die öffentliche WebUntis-Schulsuche wurde am 20.10.2026 erfolgreich abgefragt.
 
 - Persönlicher Schüler- oder Lehrerzugang mit einem eigenen WebUntis-Passwort.
 - Die Schule muss den Zugriff auf die JSON-RPC-API erlauben.
-- Bei ausschließlicher Microsoft-/SSO-Anmeldung muss die Schuladministration
-  einen geeigneten WebUntis-Zugang bereitstellen. SSO, QR-Code-Anmeldung und
-  automatische Hintergrundsynchronisation sind hier nicht implementiert.
+- Bei Microsoft-/Schulportal-Anmeldung unter **Dein WebUntis-Zugang →
+  Untis Mobile / SSO** die Mobile-Freigabe verwenden. Direkt in WebUntis wie
+  gewohnt anmelden und **Profil → Freigaben → Zugriff über Untis Mobile →
+  Aktivieren / Anzeigen** öffnen. Den QR-Code als PNG/JPG/WebP-Bild auswählen,
+  seinen vollständigen `untis://setschool?...`-Inhalt einfügen oder den dort
+  angezeigten WebUntis-Benutzernamen und Mobile-Schlüssel eintragen. Das
+  Microsoft-Passwort gehört nicht in diese Felder. Wenn die Schule keine
+  Mobile-Freigabe erlaubt, muss die Schuladministration weiterhelfen.
+- Ein direkter Microsoft-OAuth-Login und automatische Hintergrundsynchronisation
+  sind nicht implementiert. Die Alternative verwendet die vom Nutzer freigegebenen
+  Untis-Mobile-Zugangsdaten.
 
 Das Passwort wird nur für den Abruf übertragen und im Arbeitsspeicher gehalten.
 Gespeichert werden im Browser lediglich Server, Schulkürzel und Benutzername.
 Die Verbindung benötigt keinen zentralen API-Schlüssel und keine zusätzlichen
 Umgebungsvariablen. Das Konto wird bei jedem Abruf neu angemeldet.
+
+QR-Bilder werden mit `jsQR` lokal im Browser ausgewertet, nicht hochgeladen
+oder gespeichert. Der Mobile-Schlüssel bleibt im Arbeitsspeicher, wird nur
+für den Abruf per HTTPS an die App-Route übertragen und anschließend geleert.
+Der Server berechnet einen sechsstelligen TOTP-Code (SHA-1, 30 Sekunden) und
+sendet ausschließlich diesen Code an WebUntis. Schlüssel, QR-Inhalt und
+Sitzungstoken werden weder protokolliert noch an den Browser zurückgegeben.
+Gespeichert wird zusätzlich nur die gewählte Anmeldemethode.
 
 ## Technische Anbindung
 
@@ -38,6 +54,9 @@ Die serverseitige Route `POST /api/webuntis` spricht direkt per HTTPS mit
 `https://<server>.webuntis.com/WebUntis/jsonrpc.do?school=<schulkürzel>`:
 
 1. `authenticate` liefert die Sitzung und die persönliche Stundenplan-ID.
+   Bei Untis Mobile ersetzt `getUserData2017` am Endpoint
+   `/WebUntis/jsonrpc_intern.do` diesen Schritt; anschließend liefert
+   `/WebUntis/api/app/config` die persönliche ID und den Elementtyp.
 2. `getTimetable` fordert den persönlichen Plan einschließlich Fach-, Lehrer-
    und Raumnamen an. Der Zeitraum richtet sich nach dem Datum in Österreich.
 3. `logout` beendet die Sitzung mit denselben Sitzungscookies auch dann, wenn

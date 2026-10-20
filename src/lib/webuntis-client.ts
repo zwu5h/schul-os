@@ -5,6 +5,11 @@ import {
   isWebUntisServer,
 } from "./webuntis";
 import { normalizeWebUntisLessons } from "../providers/school";
+import { generateWebUntisOtp } from "./webuntis-otp";
+
+export type WebUntisCredentials = {
+  server: string; school: string; username: string; days: number;
+} & ({ authMethod?: "password"; password: string } | { authMethod: "mobile"; mobileSecret: string });
 
 const sessionSchema = z.object({
   sessionId: z.string().min(1).max(512).regex(/^[A-Za-z0-9._!-]+$/),
@@ -35,7 +40,7 @@ export function webUntisDateRange(days: number, now = new Date()) {
 
 /** One isolated session per import; no credentials or session tokens are persisted. */
 export async function fetchWebUntisTimetable(
-  input: { server: string; school: string; username: string; password: string; days: number },
+  input: WebUntisCredentials,
   options: { fetch?: typeof fetch; signal?: AbortSignal; now?: Date } = {},
 ) {
   if (!isWebUntisServer(input.server))
@@ -49,18 +54,19 @@ export async function fetchWebUntisTimetable(
   let sessionId: string | undefined;
   let sequence = 0;
 
-  async function rpc(method: string, params: Record<string, unknown>, requestSignal = signal) {
+  function sessionHeaders(): Record<string, string> {
+    return sessionId ? { Cookie: `JSESSIONID=${sessionId}; schoolname=${encodeURIComponent("_" + Buffer.from(input.school, "utf8").toString("base64"))}` } : {};
+  }
+
+  async function rpc(method: string, params: Record<string, unknown> | unknown[], requestSignal = signal, url = endpoint) {
     const id = `school-os-${++sequence}`;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Accept: "application/json",
       "X-Requested-With": "XMLHttpRequest",
     };
-    if (sessionId) {
-      headers.Cookie = `JSESSIONID=${sessionId}; schoolname=${encodeURIComponent("_" + Buffer.from(input.school, "utf8").toString("base64"))}`;
-    }
-    const response = await transport(endpoint, {
-      method: "POST", headers, cache: "no-store", redirect: "error",
+    const response = await transport(url, {
+      method: "POST", headers: { ...headers, ...sessionHeaders() }, cache: "no-store", redirect: "error",
       signal: requestSignal,
       body: JSON.stringify({ id, method, params, jsonrpc: "2.0" }),
     });
@@ -70,6 +76,13 @@ export async function fetchWebUntisTimetable(
       throw new WebUntisApiError(429, "WebUntis erhält zu viele Anfragen. Bitte später erneut versuchen.");
     if (!response.ok)
       throw new WebUntisApiError(502, "Der WebUntis-Server konnte die Anfrage nicht verarbeiten. Bitte später erneut versuchen.");
+    if (method === "getUserData2017") {
+      for (const cookie of response.headers.getSetCookie()) {
+        const value = /^JSESSIONID=([^;]+)/i.exec(cookie)?.[1];
+        const parsed = sessionSchema.safeParse({ sessionId: value });
+        if (parsed.success) sessionId = parsed.data.sessionId;
+      }
+    }
     const parsed = envelopeSchema.safeParse(await response.json().catch((error: unknown) => {
       if (requestSignal.aborted) throw error;
       return null;
@@ -79,9 +92,11 @@ export async function fetchWebUntisTimetable(
     const { result, error } = parsed.data;
     if (error) {
       // Never forward upstream messages: they may contain credentials or session data.
-      if (/bad credentials|invalid credentials|authentication failed|invalid user|invalid password/i.test(error.message) ||
-          (method === "authenticate" && error.code === -8504))
-        throw new WebUntisApiError(401, "Schule, Benutzer oder Passwort wurde nicht akzeptiert. Bei Microsoft-/SSO-Anmeldung benötigst du einen eigenen WebUntis-Zugang.");
+      if (/bad credentials|invalid credentials|authentication failed|invalid user|invalid password|invalid otp|invalid token|invalid secret/i.test(error.message) ||
+          ((method === "authenticate" || method === "getUserData2017") && error.code === -8504))
+        throw new WebUntisApiError(401, input.authMethod === "mobile"
+          ? "Die Untis-Mobile-Freigabe wurde nicht akzeptiert. Bitte den aktuellen QR-Code aus deinem WebUntis-Profil verwenden und prüfen, ob der Mobile-Zugriff aktiviert ist."
+          : "Die Passwort-Anmeldung wurde nicht akzeptiert. Bei Microsoft-/SSO-Anmeldung wähle „Untis Mobile / SSO“ und verwende die Freigabe aus deinem WebUntis-Profil.");
       if (/no right|not allowed|not authorized|permission|access denied|not enabled|not activated|not licensed/i.test(error.message))
         throw new WebUntisApiError(403, "Für diesen Zugang ist der WebUntis-API-Zugriff nicht freigeschaltet. Bitte die Schuladministration kontaktieren.");
       if (/invalid session|session expired|not authenticated/i.test(error.message))
@@ -94,9 +109,35 @@ export async function fetchWebUntisTimetable(
   }
 
   try {
-    const rawSession = await rpc("authenticate", {
-      user: input.username, password: input.password, client: "School OS",
-    });
+    let rawSession: unknown;
+    if (input.authMethod === "mobile") {
+      const time = (options.now ?? new Date()).getTime();
+      const mobileEndpoint = new URL(`https://${input.server}/WebUntis/jsonrpc_intern.do`);
+      mobileEndpoint.searchParams.set("m", "getUserData2017");
+      mobileEndpoint.searchParams.set("school", input.school);
+      mobileEndpoint.searchParams.set("v", "i2.2");
+      await rpc("getUserData2017", [{ auth: {
+        clientTime: time, user: input.username, otp: generateWebUntisOtp(input.mobileSecret, time),
+      } }], signal, mobileEndpoint);
+      if (!sessionId) throw new WebUntisApiError(502, "WebUntis hat keine gültige Mobile-Sitzung geliefert.");
+      const response = await transport(new URL("/WebUntis/api/app/config", endpoint), {
+        method: "GET", headers: { Accept: "application/json", ...sessionHeaders() },
+        cache: "no-store", redirect: "error", signal,
+      });
+      if (!response.ok) throw new WebUntisApiError(response.status === 403 || response.status === 401 ? 403 : 502,
+        "Die Untis-Mobile-Sitzung konnte nicht geladen werden. Bitte die Freigabe deiner Schule prüfen.");
+      const config = z.object({ data: z.object({ loginServiceConfig: z.object({ user: z.object({
+        personId: z.number().int().positive(), persons: z.array(z.object({ id: z.number().int(), type: z.number().int() })),
+      }) }) }) }).safeParse(await response.json());
+      if (!config.success) throw new WebUntisApiError(403, "Der Untis-Mobile-Freigabe ist kein persönlicher Stundenplan zugeordnet.");
+      const user = config.data.data.loginServiceConfig.user;
+      const person = user.persons.find((person) => person.id === user.personId);
+      rawSession = { sessionId, personId: user.personId, personType: person?.type };
+    } else {
+      rawSession = await rpc("authenticate", {
+        user: input.username, password: input.password, client: "School OS",
+      });
+    }
     const session = sessionSchema.safeParse(rawSession);
     if (!session.success)
       throw new WebUntisApiError(502, "WebUntis hat keine gültige Sitzung geliefert.");

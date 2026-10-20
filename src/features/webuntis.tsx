@@ -4,16 +4,17 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   AlertCircle, ArrowDownToLine, ArrowRight, BookOpen, CalendarDays, Check,
   CheckCircle2, ChevronDown, Clock3, ExternalLink, Eye, EyeOff, FileJson,
-  GraduationCap, LoaderCircle, LockKeyhole, MapPin, RefreshCw, Search, ShieldCheck,
+  GraduationCap, KeyRound, LoaderCircle, LockKeyhole, MapPin, QrCode, RefreshCw, Search, ShieldCheck,
 } from "lucide-react";
 import { useWorkspace } from "@/lib/store";
 import { userStorageKey } from "@/lib/local-data";
-import { DEFAULT_SCHOOL_SUGGESTION, type SchoolSuggestion } from "@/lib/webuntis";
+import { DEFAULT_SCHOOL_SUGGESTION, isWebUntisServer, normalizeMobileSecret, normalizeServer, parseWebUntisQr, type SchoolSuggestion } from "@/lib/webuntis";
+import { readWebUntisQrImage } from "@/lib/read-webuntis-qr";
 import { parseTimetableJson, sortTimetableEntries, type TimetableEntry } from "@/providers/school";
 import { entity, type Lesson } from "@/types/school";
 import styles from "./webuntis.module.css";
 
-type Connection = { server: string; school: string; username: string; displayName: string; lastImportedAt?: string };
+type Connection = { server: string; school: string; username: string; displayName: string; lastImportedAt?: string; authMethod?: "password" | "mobile" };
 type Preview = { entries: TimetableEntry[]; source: "live" | "file"; start: string; end: string };
 
 function savedConnection(): Connection {
@@ -29,6 +30,7 @@ function savedConnection(): Connection {
       displayName: typeof data.displayName === "string" ? data.displayName
         : data.school && data.school !== fallback.school ? data.school : fallback.displayName,
       lastImportedAt: typeof data.lastImportedAt === "string" && Number.isFinite(Date.parse(data.lastImportedAt)) ? data.lastImportedAt : undefined,
+      authMethod: data.authMethod === "mobile" ? "mobile" : "password",
     };
   } catch { return fallback; }
 }
@@ -61,6 +63,12 @@ export function WebUntis() {
   const [displayName, setDisplayName] = useState(saved.displayName);
   const [username, setUsername] = useState(saved.username);
   const [password, setPassword] = useState("");
+  const [authMethod, setAuthMethod] = useState<"password" | "mobile">(saved.authMethod ?? "password");
+  const [mobileSecret, setMobileSecret] = useState("");
+  const [qrText, setQrText] = useState("");
+  const [qrError, setQrError] = useState("");
+  const [qrMessage, setQrMessage] = useState("");
+  const [scanning, setScanning] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [days, setDays] = useState(7);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -101,12 +109,27 @@ export function WebUntis() {
     .filter((name) => !w.subjects.some((subject) => subject.name.trim().toLowerCase() === name.toLowerCase())) : [];
   const cancelled = entries.filter((entry) => entry.status === "cancelled").length;
   const changed = entries.filter((entry) => entry.status === "changed").length;
+  const portalServer = normalizeServer(server);
+  const portalHref = portalServer && isWebUntisServer(portalServer)
+    ? `https://${portalServer}/WebUntis/?school=${encodeURIComponent(school)}` : null;
+
+  function chooseAuthMethod(method: "password" | "mobile") {
+    setAuthMethod(method); setPassword(""); setMobileSecret(""); setQrText(""); setQrError("");
+    setQrMessage(""); setShowPassword(false); clearPreview();
+  }
+
+  function applyQr(credentials: NonNullable<ReturnType<typeof parseWebUntisQr>>) {
+    setServer(credentials.server); setSchool(credentials.school); setUsername(credentials.username);
+    if (credentials.server !== server || credentials.school !== school) setDisplayName(credentials.school);
+    setMobileSecret(credentials.mobileSecret); setPassword(""); setQrText(""); setQrError("");
+    setQrMessage("QR-Code eingelesen. Schule und Benutzer wurden übernommen."); clearPreview();
+  }
 
   function clearPreview() { setPreview(null); setEmpty(false); setDone(""); setError(""); }
   function remember(importedAt = lastImportedAt) {
     try {
       localStorage.setItem(userStorageKey("webuntis-connection"), JSON.stringify({
-        server: server.trim(), school: school.trim(), username: username.trim(), displayName, lastImportedAt: importedAt,
+        server: server.trim(), school: school.trim(), username: username.trim(), displayName, lastImportedAt: importedAt, authMethod,
       }));
     } catch { /* A full browser store must not fail the import. */ }
   }
@@ -133,14 +156,15 @@ export function WebUntis() {
 
   function selectSchool(choice: SchoolSuggestion) {
     setServer(choice.server); setSchool(choice.loginName); setDisplayName(choice.displayName);
-    setSchools([]); setSearchOpen(false); setSearchError(""); setPassword(""); setShowPassword(false); clearPreview();
+    setSchools([]); setSearchOpen(false); setSearchError(""); setPassword(""); setMobileSecret(""); setQrText(""); setQrMessage(""); setShowPassword(false); clearPreview();
   }
 
   async function fetchLive(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (fetching) return;
-    if (!server.trim() || !school.trim() || !username.trim() || !password) {
-      setError("Bitte Schule, Benutzername und Passwort ausfüllen."); return;
+    const secret = authMethod === "mobile" ? normalizeMobileSecret(mobileSecret) : password;
+    if (!server.trim() || !school.trim() || !username.trim() || !secret) {
+      setError(authMethod === "mobile" ? "Bitte Schule, WebUntis-Benutzernamen und einen gültigen Untis-Mobile-Schlüssel ausfüllen oder deinen QR-Code einlesen." : "Bitte Schule, Benutzername und Passwort ausfüllen."); return;
     }
     const controller = new AbortController();
     liveRequest.current = controller;
@@ -148,7 +172,8 @@ export function WebUntis() {
     try {
       const response = await fetch("/api/webuntis", {
         method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
-        body: JSON.stringify({ server: server.trim(), school: school.trim(), username: username.trim(), password, days }),
+        body: JSON.stringify({ server: server.trim(), school: school.trim(), username: username.trim(), days,
+          ...(authMethod === "mobile" ? { authMethod: "mobile", mobileSecret: secret } : { authMethod: "password", password: secret }) }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : "Der Stundenplan konnte nicht abgerufen werden.");
@@ -162,7 +187,7 @@ export function WebUntis() {
       if (!controller.signal.aborted) setError(cause instanceof Error && cause.name === "TimeoutError"
         ? "WebUntis antwortet gerade nicht. Bitte erneut versuchen."
         : cause instanceof Error ? cause.message : "WebUntis ist nicht erreichbar. Bitte erneut versuchen.");
-    } finally { if (!controller.signal.aborted) { setFetching(false); setPassword(""); setShowPassword(false); } }
+    } finally { if (!controller.signal.aborted) { setFetching(false); setPassword(""); setMobileSecret(""); setQrText(""); setQrMessage(""); setShowPassword(false); } }
   }
 
   function checkFile() {
@@ -195,7 +220,7 @@ export function WebUntis() {
     const timestamp = new Date().toISOString();
     setLastImportedAt(timestamp); remember(timestamp);
     setDone(`${lessons.length} ${lessons.length === 1 ? "Stunde" : "Stunden"} übernommen.`);
-    setPreview(null); setText(""); setFileName(""); setPassword(""); setShowPassword(false);
+    setPreview(null); setText(""); setFileName(""); setPassword(""); setMobileSecret(""); setQrText(""); setShowPassword(false);
   }
 
   return (
@@ -218,7 +243,7 @@ export function WebUntis() {
               <div><h2 id="connection-title">Mit WebUntis verbinden</h2><p>Deine Schule. Dein Zugang. Dein Stundenplan.</p></div>
             </div>
             <form onSubmit={(event) => void fetchLive(event)}>
-              <fieldset disabled={fetching} className={styles.fieldset}>
+              <fieldset disabled={fetching || scanning} className={styles.fieldset}>
                 <section className={styles.step}>
                   <Step number="01" title="Deine Schule"><button className={styles.textButton} type="button" onClick={() => setSearchOpen(!searchOpen)} aria-expanded={searchOpen} aria-controls="untis-school-search">{searchOpen ? "Schließen" : "Ändern"}</button></Step>
                   <div className={styles.schoolCard}><span className={styles.schoolIcon}><GraduationCap size={23} /></span>
@@ -243,11 +268,39 @@ export function WebUntis() {
 
                 <section className={styles.step}>
                   <Step number="02" title="Dein WebUntis-Zugang" />
-                  <div className={styles.fields}><label className={styles.field} htmlFor="live-user">Benutzername<input id="live-user" value={username} maxLength={80} autoComplete="username" placeholder="Dein WebUntis-Benutzername" onChange={(event) => { setUsername(event.target.value); clearPreview(); }} required /></label>
-                    <label className={styles.field} htmlFor="live-password">Passwort<div className={styles.passwordField}><input id="live-password" type={showPassword ? "text" : "password"} value={password} maxLength={200} autoComplete="current-password" placeholder="Dein WebUntis-Passwort" onChange={(event) => setPassword(event.target.value)} required />
-                      <button type="button" aria-label={showPassword ? "Passwort verbergen" : "Passwort anzeigen"} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button></div></label>
+                  <div className={styles.authMethods} role="group" aria-label="Anmeldemethode">
+                    <button type="button" aria-pressed={authMethod === "password"} onClick={() => chooseAuthMethod("password")}><LockKeyhole size={15} /> Passwort</button>
+                    <button type="button" aria-pressed={authMethod === "mobile"} onClick={() => chooseAuthMethod("mobile")}><QrCode size={15} /> Untis Mobile / SSO</button>
                   </div>
-                  <details className={styles.advanced}><summary>Du meldest dich normalerweise mit Microsoft an? <ChevronDown size={13} /></summary><p>Für den Abruf brauchst du einen eigenen WebUntis-Benutzernamen und ein WebUntis-Passwort. Deine Schuladministration kann dir weiterhelfen und den API-Zugriff freigeben.</p></details>
+                  {authMethod === "mobile" && <div className={styles.mobileHelp}>
+                    <strong>Für Microsoft- und Schulportal-Anmeldung</strong>
+                    <ol><li>{portalHref ? <a href={portalHref} target="_blank" rel="noreferrer">WebUntis öffnen <ExternalLink size={11} /></a> : "WebUntis öffnen"} und wie gewohnt über Microsoft oder das Schulportal anmelden.</li>
+                      <li>Im WebUntis-Profil <b>Freigaben → Zugriff über Untis Mobile → Aktivieren / Anzeigen</b> öffnen.</li>
+                      <li>Den QR-Code hier als Bild auswählen oder Benutzername und Schlüssel aus der Freigabe übernehmen.</li></ol>
+                    <p>Dein Microsoft-Passwort wird hier nicht benötigt. Fehlt die Mobile-Freigabe, wende dich an deine Schuladministration.</p>
+                  </div>}
+                  {authMethod === "mobile" && <div className={styles.qrImport}>
+                    <label className={styles.qrPicker}><QrCode size={20} /><span>{scanning ? "QR-Code wird gelesen …" : "QR-Code-Bild auswählen"}<small>PNG, JPG oder WebP · bis 5 MB · wird nur im Browser gelesen</small></span>
+                      <input type="file" aria-label="Untis-Mobile-QR-Code als Bild" accept="image/png,image/jpeg,image/webp" onChange={async (event) => {
+                        const file = event.target.files?.[0]; event.target.value = ""; if (!file) return;
+                        setScanning(true); setQrError(""); setQrMessage("");
+                        try { applyQr(await readWebUntisQrImage(file)); }
+                        catch (cause) { setQrError(cause instanceof Error ? cause.message : "Der QR-Code konnte nicht gelesen werden."); }
+                        finally { setScanning(false); }
+                      }} />
+                    </label>
+                    <details className={styles.advanced}><summary>QR-Code-Inhalt stattdessen einfügen <ChevronDown size={13} /></summary><div className={styles.fields}>
+                      <label className={styles.field} htmlFor="live-qr-text">QR-Code-Inhalt<input id="live-qr-text" type="password" autoComplete="off" maxLength={4000} value={qrText} placeholder="untis://setschool?…" onChange={(event) => setQrText(event.target.value)} /></label>
+                      <button type="button" className={styles.secondaryButton} disabled={!qrText.trim()} onClick={() => { const parsed = parseWebUntisQr(qrText); if (parsed) applyQr(parsed); else setQrError("Bitte den vollständigen Untis-Mobile-QR-Code verwenden. Ein normaler WebUntis-Link reicht nicht aus."); }}>QR-Daten übernehmen <ArrowRight size={14} /></button>
+                    </div></details>
+                    {qrError && <p className={styles.error} role="alert">{qrError}</p>}
+                    {qrMessage && <p className={styles.qrSuccess} role="status"><CheckCircle2 size={14} />{qrMessage}</p>}
+                  </div>}
+                  <div className={styles.fields}><label className={styles.field} htmlFor="live-user">Benutzername<input id="live-user" value={username} maxLength={80} autoComplete="username" placeholder="Dein WebUntis-Benutzername" onChange={(event) => { setUsername(event.target.value); clearPreview(); }} required /></label>
+                    <label className={styles.field} htmlFor={authMethod === "mobile" ? "live-mobile-secret" : "live-password"}>{authMethod === "mobile" ? "Untis-Mobile-Schlüssel" : "Passwort"}<div className={styles.passwordField}><input id={authMethod === "mobile" ? "live-mobile-secret" : "live-password"} type={showPassword ? "text" : "password"} value={authMethod === "mobile" ? mobileSecret : password} maxLength={authMethod === "mobile" ? 512 : 200} autoComplete={authMethod === "mobile" ? "off" : "current-password"} placeholder={authMethod === "mobile" ? "Schlüssel aus deinen WebUntis-Freigaben" : "Dein WebUntis-Passwort"} onChange={(event) => authMethod === "mobile" ? setMobileSecret(event.target.value) : setPassword(event.target.value)} required />
+                      <button type="button" aria-label={`${authMethod === "mobile" ? "Schlüssel" : "Passwort"} ${showPassword ? "verbergen" : "anzeigen"}`} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button></div></label>
+                  </div>
+                  {authMethod === "password" && <p className={styles.ssoHint}>Du nutzt Microsoft oder ein Schulportal? <button type="button" onClick={() => chooseAuthMethod("mobile")}>Untis-Mobile-Freigabe verwenden <ArrowRight size={12} /></button></p>}
                 </section>
 
                 <section className={styles.step}>
@@ -255,12 +308,12 @@ export function WebUntis() {
                   <div className={styles.period} role="group" aria-label="Zeitraum">{[7, 14].map((amount) => <button type="button" key={amount} aria-pressed={days === amount} onClick={() => { setDays(amount); clearPreview(); }}>
                     <CalendarDays size={17} /><span>{amount === 7 ? "Eine Woche" : "Zwei Wochen"}<small>Die nächsten {amount} Tage</small></span>{days === amount && <Check size={16} />}
                   </button>)}</div>
-                  <button className={styles.primaryButton} type="submit" disabled={searching || fetching}>{fetching ? <><LoaderCircle size={17} className={styles.spin} /> Stundenplan wird abgerufen …</> : <><ArrowDownToLine size={17} /> Stundenplan abrufen <ArrowRight size={17} /></>}</button>
-                  <p className={styles.privacy}><LockKeyhole size={13} /> Dein Passwort wird nicht gespeichert und nach dem Abruf geleert.</p>
+                  <button className={styles.primaryButton} type="submit" disabled={searching || fetching || scanning}>{fetching ? <><LoaderCircle size={17} className={styles.spin} /> Stundenplan wird abgerufen …</> : <><ArrowDownToLine size={17} /> Stundenplan abrufen <ArrowRight size={17} /></>}</button>
+                  <p className={styles.privacy}><LockKeyhole size={13} /> {authMethod === "mobile" ? "Dein Zugriffsschlüssel" : "Dein Passwort"} wird nicht gespeichert und nach dem Abruf geleert.</p>
                 </section>
               </fieldset>
             </form>
-            {error && <div className={styles.errorBox} role="alert"><AlertCircle size={18} /><div><strong>Abruf nicht möglich</strong><p>{error}</p></div></div>}
+            {error && <div className={styles.errorBox} role="alert"><AlertCircle size={18} /><div><strong>Abruf nicht möglich</strong><p>{error}</p>{authMethod === "password" && <button className={styles.textButton} type="button" onClick={() => chooseAuthMethod("mobile")}><KeyRound size={13} /> Ich nutze Microsoft / SSO</button>}</div></div>}
           </section>
 
           <details className={`${styles.card} ${styles.fileImport}`}>

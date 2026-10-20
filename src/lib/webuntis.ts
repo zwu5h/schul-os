@@ -67,6 +67,29 @@ export function normalizeUsername(raw: string): string | null {
   return value;
 }
 
+/** Untis-Mobile uses a Base32 access key, separate from the user's SSO password. */
+export function normalizeMobileSecret(raw: string): string | null {
+  const value = raw.replace(/[\s-]/g, "").replace(/=+$/, "").toUpperCase();
+  return /^[A-Z2-7]{16,256}$/.test(value) ? value : null;
+}
+
+export function parseWebUntisQr(raw: string): {
+  server: string; school: string; username: string; mobileSecret: string;
+} | null {
+  if (raw.length > 4000) return null;
+  try {
+    const uri = new URL(raw.trim());
+    if (uri.protocol !== "untis:" || uri.hostname !== "setschool" ||
+        (uri.pathname && uri.pathname !== "/")) return null;
+    const server = normalizeServer(uri.searchParams.get("url") || "");
+    const school = normalizeSchool(uri.searchParams.get("school") || "");
+    const username = normalizeUsername(uri.searchParams.get("user") || "");
+    const mobileSecret = normalizeMobileSecret(uri.searchParams.get("key") || "");
+    if (!server || !isWebUntisServer(server) || !school || !username || !mobileSecret) return null;
+    return { server, school, username, mobileSecret };
+  } catch { return null; }
+}
+
 const schoolSuggestion = z.object({
   server: z.string().min(1).max(80),
   loginName: z.string().min(1).max(80),
