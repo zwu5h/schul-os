@@ -116,7 +116,7 @@ export function gapLabel(gap: TimetableGap): string {
 export function normalizeWebUntisLessons(periods: unknown): TimetableEntry[] {
   if (!Array.isArray(periods)) return [];
   const pick = (list: Array<{ name?: string; longname?: string }>) =>
-    (list[0]?.longname || list[0]?.name || "").trim();
+    [...new Set(list.map((entry) => (entry.longname || entry.name || "").trim()).filter(Boolean))].join(", ");
   const pad = (n: number, len: number) => String(n).padStart(len, "0");
   const out: TimetableEntry[] = [];
   for (const raw of periods.slice(0, 1000)) {
@@ -125,6 +125,10 @@ export function normalizeWebUntisLessons(periods: unknown): TimetableEntry[] {
     const p = parsed.data;
     const day = pad(p.date, 8);
     const from = `${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6, 8)}`;
+    const calendarDay = new Date(`${from}T00:00:00Z`);
+    if (!Number.isFinite(calendarDay.getTime()) ||
+        calendarDay.toISOString().slice(0, 10) !== from ||
+        p.startTime % 100 > 59 || p.endTime % 100 > 59) continue;
     const time = (t: number) => {
       const s = pad(t, 4);
       return `${s.slice(0, 2)}:${s.slice(2, 4)}`;

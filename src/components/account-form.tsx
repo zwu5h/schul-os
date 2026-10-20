@@ -49,6 +49,7 @@ export function AccountForm({ mode }: { mode: "login" | "register" }) {
           {error && <p role="alert" className="auth-error">{error}</p>}
           <button className="button primary" disabled={busy} type="submit">{busy ? "Bitte warten …" : mode === "login" ? "Anmelden" : "Registrieren"}</button>
         </form>
+        {mode === "login" && <p className="auth-switch"><Link href="/forgot-password">Passwort vergessen?</Link></p>}
         <p className="auth-switch">{mode === "login" ? "Noch kein Konto? " : "Schon ein Konto? "}<Link href={mode === "login" ? "/register" : "/login"}>{mode === "login" ? "Registrieren" : "Anmelden"}</Link></p>
       </section>
     </main>

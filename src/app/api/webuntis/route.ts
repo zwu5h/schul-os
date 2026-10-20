@@ -1,17 +1,15 @@
-import { WebUntis } from "webuntis";
+import { fetchWebUntisTimetable } from "@/lib/webuntis-client";
 import { auth } from "@/lib/server-auth";
 import { z } from "zod";
-import { normalizeWebUntisLessons } from "@/providers/school";
 import {
   MAX_BODY_BYTES,
   SCHOOL_SEARCH_TIMEOUT_MS,
-  WEBUNTIS_TIMEOUT_MS,
   classifyTimetableError,
   normalizeSchool,
   normalizeServer,
+  isWebUntisServer,
   normalizeUsername,
   searchSchools,
-  withTimeout,
 } from "@/lib/webuntis";
 
 export const runtime = "nodejs";
@@ -24,11 +22,16 @@ const timetableInput = z.object({
   days: z.number().int().min(1).max(14).default(7),
 });
 
-const timetableRequests: number[] = [];
-const searchRequests: number[] = [];
+const timetableRequests = new Map<string, number[]>();
+const searchRequests = new Map<string, number[]>();
 
-function limited(bucket: number[], max: number): boolean {
+function limited(buckets: Map<string, number[]>, userId: string, max: number): boolean {
   const now = Date.now();
+  for (const [key, entries] of buckets) {
+    if (!entries.length || entries[entries.length - 1] < now - 60000) buckets.delete(key);
+  }
+  const bucket = buckets.get(userId) ?? [];
+  buckets.set(userId, bucket);
   while (bucket.length && bucket[0] < now - 60000) bucket.shift();
   if (bucket.length >= max) return true;
   bucket.push(now);
@@ -48,12 +51,13 @@ function sameOrigin(request: Request): boolean {
 
 function tooLarge(request: Request, body: string): boolean {
   return Number(request.headers.get("content-length") || 0) > MAX_BODY_BYTES ||
-    body.length > MAX_BODY_BYTES;
+    Buffer.byteLength(body, "utf8") > MAX_BODY_BYTES;
 }
 
 /** Öffentliche Schulsuche ohne Login: liefert Server + Schulkürzel. */
 export async function GET(request: Request) {
-  if (!(await auth.api.getSession({ headers: request.headers })))
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session)
     return Response.json({ error: "Anmeldung erforderlich." }, { status: 401 });
   if (!sameOrigin(request))
     return Response.json({ error: "Anfrage abgelehnt." }, { status: 403 });
@@ -64,7 +68,7 @@ export async function GET(request: Request) {
       { error: "Bitte mindestens 2 Zeichen für die Schulsuche eingeben." },
       { status: 400 },
     );
-  if (limited(searchRequests, 15))
+  if (limited(searchRequests, session.user.id, 15))
     return Response.json(
       { error: "Bitte warte eine Minute vor der nächsten Anfrage." },
       { status: 429 },
@@ -78,7 +82,7 @@ export async function GET(request: Request) {
         { error: "Zu viele Schulen gefunden. Bitte Suche eingrenzen." },
         { status: 400 },
       );
-    return Response.json({ schools });
+    return Response.json({ schools }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof Error && /abort/i.test(error.name))
       return Response.json(
@@ -98,7 +102,8 @@ export async function GET(request: Request) {
  * Das Passwort lebt nur in dieser Anfrage und wird nie gespeichert.
  */
 export async function POST(request: Request) {
-  if (!(await auth.api.getSession({ headers: request.headers })))
+  const session = await auth.api.getSession({ headers: request.headers });
+  if (!session)
     return Response.json({ error: "Anmeldung erforderlich." }, { status: 401 });
   if (!sameOrigin(request))
     return Response.json({ error: "Anfrage abgelehnt." }, { status: 403 });
@@ -124,32 +129,22 @@ export async function POST(request: Request) {
   const server = normalizeServer(parsed.data.server);
   const school = normalizeSchool(parsed.data.school);
   const username = normalizeUsername(parsed.data.username);
-  if (!server || !school || !username)
+  if (!server || !isWebUntisServer(server) || !school || !username)
     return Response.json(
       { error: "Bitte Server, Schule, Benutzer und Passwort prüfen." },
       { status: 400 },
     );
-  if (limited(timetableRequests, 10))
+  if (limited(timetableRequests, session.user.id, 10))
     return Response.json(
       { error: "Bitte warte eine Minute vor der nächsten Anfrage." },
       { status: 429 },
     );
-  const { password, days } = parsed.data;
-  const untis = new WebUntis(school, username, password, server);
   try {
-    await withTimeout(untis.login(), WEBUNTIS_TIMEOUT_MS);
-    try {
-      const start = new Date();
-      const end = new Date();
-      end.setDate(end.getDate() + days - 1);
-      const periods = await withTimeout(
-        untis.getOwnTimetableForRange(start, end),
-        WEBUNTIS_TIMEOUT_MS,
-      );
-      return Response.json({ lessons: normalizeWebUntisLessons(periods) });
-    } finally {
-      await withTimeout(untis.logout(), 8000).catch(() => {});
-    }
+    const result = await fetchWebUntisTimetable(
+      { ...parsed.data, server, school, username },
+      { signal: request.signal },
+    );
+    return Response.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const failure = classifyTimetableError(error);
     return Response.json({ error: failure.error }, { status: failure.status });

@@ -1,0 +1,54 @@
+# WebUntis verbinden
+
+Unter **WebUntis → Live aus WebUntis abrufen** die Schule suchen, den Treffer
+übernehmen und den persönlichen WebUntis-Benutzernamen sowie das zugehörige
+Passwort eintragen. Danach 7 oder 14 Tage abrufen, die Vorschau prüfen und die
+Stunden übernehmen. Fächer werden bei Bedarf angelegt; Ausfälle und Änderungen
+werden aus der API übernommen.
+
+Die voreingestellte Schule BG/BRG Neusiedl/See verwendet
+`gymnasium-neusiedl.webuntis.com` und das Schulkürzel `gymnasium-neusiedl`.
+Die öffentliche WebUntis-Schulsuche wurde am 20.10.2026 erfolgreich abgefragt.
+
+## Voraussetzungen
+
+- Persönlicher Schüler- oder Lehrerzugang mit einem eigenen WebUntis-Passwort.
+- Die Schule muss den Zugriff auf die JSON-RPC-API erlauben.
+- Bei ausschließlicher Microsoft-/SSO-Anmeldung muss die Schuladministration
+  einen geeigneten WebUntis-Zugang bereitstellen. SSO, QR-Code-Anmeldung und
+  automatische Hintergrundsynchronisation sind hier nicht implementiert.
+
+Das Passwort wird nur für den Abruf übertragen und im Arbeitsspeicher gehalten.
+Gespeichert werden im Browser lediglich Server, Schulkürzel und Benutzername.
+Die Verbindung benötigt keinen zentralen API-Schlüssel und keine zusätzlichen
+Umgebungsvariablen. Das Konto wird bei jedem Abruf neu angemeldet.
+
+## Technische Anbindung
+
+Die serverseitige Route `POST /api/webuntis` spricht direkt per HTTPS mit
+`https://<server>.webuntis.com/WebUntis/jsonrpc.do?school=<schulkürzel>`:
+
+1. `authenticate` liefert die Sitzung und die persönliche Stundenplan-ID.
+2. `getTimetable` fordert den persönlichen Plan einschließlich Fach-, Lehrer-
+   und Raumnamen an. Der Zeitraum richtet sich nach dem Datum in Österreich.
+3. `logout` beendet die Sitzung mit denselben Sitzungscookies auch dann, wenn
+   der Abruf fehlschlägt. Dafür gilt ein separates Zeitlimit von drei Sekunden.
+
+Ein Abruf hat insgesamt maximal 20 Sekunden Zeit zuzüglich des Logout-Versuchs.
+Zugangsdaten werden ausschließlich an Subdomains von `webuntis.com` gesendet;
+Weiterleitungen werden nicht verfolgt. Die App-Anmeldung und Same-Origin-Prüfung
+schützen die Route. Anfragelimits gelten je App-Konto und Serverprozess.
+Sitzungstoken und ursprüngliche API-Fehlermeldungen werden nicht an den Browser
+weitergegeben. Die Schulsuche läuft über `GET /api/webuntis?q=...`.
+
+## Prüfung
+
+`npx playwright test --config playwright.webuntis.config.ts`
+prüft den Protokollablauf mit simulierten WebUntis-Antworten und den Schutz der
+App-Route. Ein Browsertest prüft Vorschau, Übernahme und Speicherung der Fächer
+und Stunden mit einer simulierten API-Antwort sowie das Verwerfen des Passworts.
+Die Konfiguration verwendet eine eigene Testdatenbank, damit wiederholte
+Testläufe nicht mit den Anmeldelimits des normalen App-Kontos kollidieren.
+Ohne gültige persönliche Zugangsdaten wurde kein echter persönlicher
+Stundenplan abgerufen. Eine erfolgreiche Schulsuche allein bestätigt keine
+API-Freigabe für einen bestimmten Benutzer.

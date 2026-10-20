@@ -28,6 +28,7 @@ npm run dev
 - Suche/Navigation mit Ctrl/Cmd+K, Quick Capture, Light/Dark Mode
 - Vollständiger JSON-Backup-Export inklusive Canvas und Dateiinhalten
 - Responsive Oberfläche und lokale Speicherung nach Neuladen
+- Fächer-Synchronisierung zwischen Geräten über den bestehenden School-OS-Account, inklusive Übernahme vorhandener lokaler Fächer
 
 ## Groq
 
@@ -37,9 +38,9 @@ Der Key bleibt serverseitig. Die API validiert Herkunft und Eingaben und begrenz
 
 ## Grenzen und nächste Phasen
 
-Dies ist das erste lokale MVP, nicht die komplette 70-Punkte-Roadmap. Supabase Auth/Cloud-Sync, echter WebUntis-Sync, verschlüsselte Keys pro Benutzer, weitere KI-Provider, PDF-Textextraktion/OCR, Quiz, Versionsverlauf, Backup-Import und PWA-Offline-Kaltstart sind noch nicht implementiert. Nicht verbundene Integrationen werden als solche angezeigt. Daten sind an Browser und Origin gebunden: `localhost` und `127.0.0.1` haben getrennte Speicher.
+Dies ist das erste MVP, nicht die komplette 70-Punkte-Roadmap. Supabase Auth und Cloud-Sync sind angebunden; ein vollständiger Sync-Test mit zwei Konten steht noch aus. Verschlüsselte Keys pro Benutzer, weitere KI-Provider, PDF-Textextraktion/OCR, Quiz, Versionsverlauf, Backup-Import und PWA-Offline-Kaltstart sind noch nicht implementiert. Nicht verbundene Integrationen werden als solche angezeigt. Lokale Daten sind an Browser und Origin gebunden: `localhost` und `127.0.0.1` haben getrennte Speicher.
 
-Das vorbereitete Supabase-Datenmodell mit RLS liegt unter `supabase/migrations/`; es ist noch nicht angewendet oder gegen eine Supabase-Instanz getestet. Öffentlicher Mehrbenutzerbetrieb ist noch nicht freigegeben; vor einem solchen Deployment müssen Auth und nutzerbezogene Serverlimits implementiert werden.
+Die Supabase-Instanz `schul-os` ist verbunden; die Datenbankmigration mit RLS und privatem Storage wurde angewendet. Der Verbindungstest `npm run supabase:check` ist erfolgreich. Einrichtung und Funktionsprüfung: [Supabase](docs/SUPABASE.md). Die Server-Anmeldung und das Supabase-Konto für Cloud-Sync sind derzeit getrennt.
 
 [Architektur und Phasen](docs/ARCHITECTURE.md) · [Originalanforderungen](docs/PRODUCT_SPEC.md)
 

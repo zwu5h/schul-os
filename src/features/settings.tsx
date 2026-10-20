@@ -7,24 +7,41 @@ import { entity, type Lesson } from "@/types/school";
 import { parseTimetableJson, type TimetableEntry } from "@/providers/school";
 import { DEFAULT_SCHOOL_SUGGESTION, type SchoolSuggestion } from "@/lib/webuntis";
 import { isCloudEnabled, useAuth } from "@/lib/auth";
+import { authClient } from "@/lib/auth-client";
 import { useSync } from "@/lib/sync";
+import { useSubjectSync } from "@/lib/subject-sync";
 import { emptyWorkspace, demoWorkspace } from "@/lib/demo";
 import { download } from "@/components/ui";
 function Account() {
+  const { data: session, isPending } = authClient.useSession();
   const auth = useAuth();
   const sync = useSync();
+  const subjectSync = useSubjectSync();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   if (!isCloudEnabled()) {
     return (
-      <p className="muted">
-        Cloud-Backend ist nicht konfiguriert. Für Login und Sync ein
-        Supabase-Projekt anlegen, die Migration aus{" "}
-        <code>supabase/migrations/0001_foundation.sql</code> anwenden und{" "}
-        <code>NEXT_PUBLIC_SUPABASE_URL</code> sowie{" "}
-        <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> setzen – Anleitung in{" "}
-        <code>docs/CLOUD_SETUP.md</code>.
-      </p>
+      <div className="form">
+        <p>
+          {isPending ? "Konto wird geladen …" : session?.user
+            ? <>Angemeldet als <strong>{session.user.email}</strong></>
+            : "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an."}
+        </p>
+        <p className="muted">
+          Deine Fächer werden über deinen Account automatisch zwischen Geräten
+          synchronisiert. Notizen, Whiteboards und Dateien werden in diesem
+          Browser gespeichert. Nutze „Daten & Sicherung“, um sie zu exportieren.
+        </p>
+        <p className="muted" role="status">
+          {subjectSync.lastSync
+            ? `Fächer zuletzt synchronisiert: ${new Date(subjectSync.lastSync).toLocaleString("de-AT")}`
+            : "Fächer werden synchronisiert …"}
+        </p>
+        <button className="button" disabled={subjectSync.running} onClick={() => void subjectSync.syncNow()}>
+          {subjectSync.running ? "Synchronisiert …" : "Jetzt synchronisieren"}
+        </button>
+        {subjectSync.error && <p className="muted" role="alert">{subjectSync.error}</p>}
+      </div>
     );
   }
   if (!auth.ready) return <p className="muted">Konto wird geladen …</p>;
@@ -162,8 +179,8 @@ export function Settings() {
           Notizen und Aufgaben liegen im Browserspeicher. Canvas und Dateien
           liegen in IndexedDB.{" "}
           {authUser
-            ? "Angemeldet: Änderungen syncen automatisch in die Cloud."
-            : "Ohne Anmeldung bleibt alles nur lokal in diesem Browser."}
+            ? "Cloud verbunden: Änderungen werden automatisch synchronisiert."
+            : "Fächer werden über deinen Account synchronisiert. Die übrigen Inhalte bleiben lokal in diesem Browser."}
         </p>
         <button
           className="button"
@@ -584,6 +601,12 @@ export function WebUntis() {
           Schulkürzel garantiert. Schritt 2: mit deinen
           WebUntis-Zugangsdaten abrufen. Das Passwort bleibt nur in dieser
           Sitzung im Arbeitsspeicher und wird nie gespeichert.
+        </p>
+        <p className="muted">
+          Verwende deinen persönlichen WebUntis-Benutzernamen und dein
+          WebUntis-Passwort. Ein Microsoft- oder Schulportal-Login funktioniert
+          hier nur, wenn dafür auch ein eigener WebUntis-Zugang eingerichtet ist.
+          Der API-Zugriff muss von deiner Schule erlaubt sein.
         </p>
         <div className="form">
           <div className="field">

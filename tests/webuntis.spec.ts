@@ -1,4 +1,6 @@
 import { test, expect } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+import { emptyWorkspace } from "../src/lib/demo";
 import {
   DEFAULT_SCHOOL_SUGGESTION,
   classifyTimetableError,
@@ -150,6 +152,10 @@ test("webuntis periods normalize defensively", () => {
 });
 
 test("school search api validates input and origin", async ({ request }) => {
+  const signup = await request.post("/api/auth/sign-up/email", {
+    data: { email: `untis-${randomUUID()}@example.test`, password: "webuntis-test-password-123", name: "Untis Test" },
+  });
+  expect(signup.ok()).toBeTruthy();
   const missing = await request.get("/api/webuntis");
   expect(missing.status()).toBe(400);
 
@@ -249,19 +255,64 @@ test("gaps between lessons are classified as pause or free period", () => {
   );
 });
 
-test("timetable accepts pasted urls instead of rejecting them", async ({
+test("timetable rejects unsafe credential destinations and invalid school encoding", async ({
   request,
 }) => {
-  const res = await request.post("/api/webuntis", {
-    data: {
-      server: "https://mese.webuntis.com/WebUntis/",
-      school: "https://mese.webuntis.com/WebUntis/?school=brg-muster",
-      username: "jemand",
-      password: "geheim",
-      days: 7,
-    },
+  const signup = await request.post("/api/auth/sign-up/email", {
+    data: { email: `untis-${randomUUID()}@example.test`, password: "webuntis-test-password-123", name: "Untis Test" },
   });
-  // Normalisierung muss greifen: kein 400 mehr, sondern ein Ergebnis
-  // der echten Verbindung (401/502/504 je nach Netz und Zugang).
-  expect(res.status()).not.toBe(400);
+  expect(signup.ok()).toBeTruthy();
+  for (const input of [
+    { server: "https://evil.example/WebUntis/", school: "brg-muster" },
+    { server: "https://mese.webuntis.com/WebUntis/", school: "https://mese.webuntis.com/?school=%ZZ" },
+  ]) {
+    const res = await request.post("/api/webuntis", {
+      data: { ...input, username: "jemand", password: "geheim", days: 7 },
+    });
+    expect(res.status()).toBe(400);
+  }
+});
+
+test("webuntis endpoints require an app session", async ({ request }) => {
+  expect((await request.get("/api/webuntis?q=Neusiedl")).status()).toBe(401);
+  expect((await request.post("/api/webuntis", { data: {} })).status()).toBe(401);
+});
+
+test("invalid dates and minutes cannot enter the timetable", () => {
+  const period = { date: 20260230, startTime: 800, endTime: 850, su: [{ name: "M" }] };
+  expect(normalizeWebUntisLessons([period, { ...period, date: 20261020, startTime: 860 }])).toEqual([]);
+});
+
+test("live timetable preview imports subjects and lessons without storing the password", async ({ page }) => {
+  const signup = await page.request.post("/api/auth/sign-up/email", {
+    data: { email: `untis-${randomUUID()}@example.test`, password: "webuntis-test-password-123", name: "Untis Test" },
+  });
+  expect(signup.ok()).toBeTruthy();
+  await page.addInitScript((workspace) => {
+    if (!localStorage.getItem("school-os-v1"))
+      localStorage.setItem("school-os-v1", JSON.stringify({ state: workspace, version: 0 }));
+  }, { ...emptyWorkspace(), onboarded: true });
+  await page.route("**/api/webuntis", async (route) => {
+    expect(route.request().postDataJSON()).toMatchObject({
+      server: "gymnasium-neusiedl.webuntis.com", school: "gymnasium-neusiedl",
+      username: "student", password: "private-untis-password", days: 7,
+    });
+    await route.fulfill({ json: { lessons: [{ subject: "Mathematik", start: "2026-10-20T08:00", end: "2026-10-20T08:50", room: "B207", teacher: "HUB", status: "changed" }] } });
+  });
+  await page.goto("/");
+  await page.locator(".webuntis-link").click();
+  await page.locator("#live-user").fill("student");
+  await page.locator("#live-password").fill("private-untis-password");
+  await page.getByRole("button", { name: "Abrufen und prüfen", exact: true }).click();
+  await expect(page.getByText("1 Stunde bereit", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Übernehmen", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "1 Stunde übernommen." })).toBeVisible();
+  await expect(page.locator("#live-password")).toHaveValue("");
+  const stored = await page.evaluate(() => ({
+    workspace: JSON.parse(localStorage.getItem("school-os-v1")!).state,
+    storage: JSON.stringify({ ...localStorage }),
+  }));
+  expect(stored.workspace.subjects).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Mathematik" })]));
+  expect(stored.workspace.lessons).toEqual([expect.objectContaining({ source: "webuntis", room: "B207", status: "changed" })]);
+  expect(stored.storage).not.toContain("private-untis-password");
 });

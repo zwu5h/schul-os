@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
@@ -27,6 +27,7 @@ import { useAuth } from "@/lib/auth";
 import { authClient } from "@/lib/auth-client";
 import { setLocalUser, workspaceKey } from "@/lib/local-data";
 import { initAutoSync } from "@/lib/sync";
+import { initSubjectSync } from "@/lib/subject-sync";
 import { demoWorkspace, emptyWorkspace } from "@/lib/demo";
 import { entity, type View } from "@/types/school";
 import { BoardLibrary } from "@/features/board-library";
@@ -35,6 +36,7 @@ import { Capture, type CaptureKind } from "@/features/capture";
 import { Calendar, Learn, Tasks } from "@/features/organization";
 import { Settings, WebUntis } from "@/features/settings";
 import { Empty, Modal } from "./ui";
+import { ChatBoundary } from "./chat-boundary";
 const Canvas = dynamic(() => import("@/features/canvas"), {
   ssr: false,
   loading: () => <div className="empty">Canvas wird geladen …</div>,
@@ -45,6 +47,7 @@ const NoteEditor = dynamic(
 );
 const Chat = dynamic(() => import("@/features/chat").then((m) => m.Chat), {
   ssr: false,
+  loading: () => <div className="empty" role="status">KI-Assistent wird geladen …</div>,
 });
 const Files = dynamic(() => import("@/features/files").then((m) => m.Files), {
   ssr: false,
@@ -93,6 +96,36 @@ export function SchoolApp({ userId }: { userId: string }) {
   const [online, setOnline] = useState(true);
   const [notice, setNotice] = useState("");
   const [quick, setQuick] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!mobile || !window.matchMedia("(max-width: 650px)").matches) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const drawer = sidebarRef.current;
+    const buttons = () => Array.from(drawer?.querySelectorAll<HTMLElement>("button, input, select, a[href]") || []);
+    buttons()[0]?.focus();
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobile(false);
+      if (event.key !== "Tab") return;
+      const items = buttons();
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKey);
+      previousFocus?.focus();
+    };
+  }, [mobile]);
   useEffect(() => {
     setLocalUser(userId);
     useWorkspace.persist.setOptions({ name: workspaceKey() });
@@ -101,11 +134,13 @@ export function SchoolApp({ userId }: { userId: string }) {
     );
     useAuth.getState().init();
     initAutoSync();
+    const stopSubjectSync = initSubjectSync();
     const sync = () => setOnline(navigator.onLine);
     sync();
     window.addEventListener("online", sync);
     window.addEventListener("offline", sync);
     return () => {
+      stopSubjectSync();
       window.removeEventListener("online", sync);
       window.removeEventListener("offline", sync);
     };
@@ -153,6 +188,7 @@ export function SchoolApp({ userId }: { userId: string }) {
     setMobile(false);
   }
   function open(next: "notes" | "canvas", id: string) {
+    setMobile(false);
     setView(next);
     setActiveId(id);
     const current = useWorkspace.getState();
@@ -216,7 +252,7 @@ export function SchoolApp({ userId }: { userId: string }) {
         <div className="onboarding-form">
           <span className="eyebrow">WILLKOMMEN BEI SCHOOL OS</span>
           <h2>Mach Platz für gute Ideen.</h2>
-          <p>Starte lokal. Ohne Konto. In deinem Tempo.</p>
+          <p>Richte deinen persönlichen Workspace ein. In deinem Tempo.</p>
           <form
             className="form"
             onSubmit={(e) => {
@@ -297,7 +333,10 @@ export function SchoolApp({ userId }: { userId: string }) {
           onClick={() => setMobile(false)}
         />
       )}
-      <aside className={`sidebar ${mobile ? "mobile-open" : ""}`}>
+      <aside id="workspace-navigation" ref={sidebarRef} aria-label="Workspace-Navigation" className={`sidebar ${mobile ? "mobile-open" : ""}`}>
+        <button className="icon-button drawer-close" aria-label="Navigation schließen" onClick={() => setMobile(false)}>
+          <X size={20} />
+        </button>
         <button className="brand" onClick={() => go("canvas")}>
           <span>
             <GraduationCap size={21} />
@@ -323,7 +362,7 @@ export function SchoolApp({ userId }: { userId: string }) {
           router.replace("/login");
           router.refresh();
         }}>Abmelden</button>
-        <button className="search-button" onClick={() => setSearch(true)}>
+        <button className="search-button" onClick={() => { setMobile(false); setSearch(true); }}>
           <Search size={15} />
           <span>Suchen</span>
           <kbd>Ctrl K</kbd>
@@ -403,6 +442,8 @@ export function SchoolApp({ userId }: { userId: string }) {
             <button
               className="icon-button menu-toggle"
               aria-label="Menü"
+              aria-expanded={mobile}
+              aria-controls="workspace-navigation"
               onClick={() => setMobile(!mobile)}
             >
               <Menu size={19} />
@@ -419,11 +460,14 @@ export function SchoolApp({ userId }: { userId: string }) {
                 month: "short",
               })}
             </span>
-            <button className="ai-toggle" onClick={() => setAiPanel(!aiPanel)}>
+            <button className="ai-toggle" aria-label="Frag die KI" aria-expanded={aiPanel} onClick={() => setAiPanel(!aiPanel)}>
               <Sparkles size={16} />
               <span>Frag die KI</span>
             </button>
-            <button className="new-button" onClick={() => setQuick(true)}>
+            <button className="icon-button mobile-search" aria-label="Suchen" onClick={() => setSearch(true)}>
+              <Search size={19} />
+            </button>
+            <button className="new-button" aria-label="Neu erstellen" onClick={() => setQuick(true)}>
               <Plus size={16} />
               <span>Neu</span>
             </button>
@@ -724,11 +768,13 @@ export function SchoolApp({ userId }: { userId: string }) {
           {view === "settings" && <Settings />}
           {view === "webuntis" && <WebUntis />}
           {view === "ai" && (
+            <ChatBoundary>
             <Chat
               subjectId={subjectId}
               context={context}
               addToCanvas={addToCanvas}
             />
+            </ChatBoundary>
           )}
         </main>
         <footer className="app-footer">
@@ -738,6 +784,23 @@ export function SchoolApp({ userId }: { userId: string }) {
           </span>
         </footer>
       </div>
+      <nav className="mobile-nav" aria-label="Hauptnavigation">
+        {([
+          { id: "canvas", label: "Boards", icon: Layers },
+          { id: "today", label: "Heute", icon: Home },
+          { id: "tasks", label: "Aufgaben", icon: CheckSquare },
+          { id: "calendar", label: "Kalender", icon: CalendarDays },
+        ] as const).map((item) => (
+          <button key={item.id} aria-current={view === item.id ? "page" : undefined} onClick={() => go(item.id)}>
+            <item.icon size={21} />
+            <span>{item.label}</span>
+          </button>
+        ))}
+        <button aria-expanded={mobile} aria-controls="workspace-navigation" className={!['canvas', 'today', 'tasks', 'calendar'].includes(view) ? "active" : ""} onClick={() => setMobile(!mobile)}>
+          <Menu size={21} />
+          <span>Mehr</span>
+        </button>
+      </nav>
       {aiPanel && (
         <aside className="ai-panel">
           <header>
@@ -751,11 +814,13 @@ export function SchoolApp({ userId }: { userId: string }) {
               <X size={18} />
             </button>
           </header>
+          <ChatBoundary>
           <Chat
             subjectId={subjectId}
             context={context}
             addToCanvas={addToCanvas}
           />
+          </ChatBoundary>
         </aside>
       )}
       {capture && (

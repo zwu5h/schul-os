@@ -60,7 +60,11 @@ export const useAuth = create<AuthState>()((set) => ({
       return;
     }
     set({ busy: true, error: null, notice: null });
-    const { data, error } = await sb.auth.signUp({ email, password });
+    const { data, error } = await sb.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: window.location.origin },
+    });
     if (error) {
       set({ busy: false, error: friendly(error.message) });
       return;

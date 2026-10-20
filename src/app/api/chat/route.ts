@@ -1,5 +1,6 @@
 import { GroqProvider } from "@/providers/groq";
 import { auth } from "@/lib/server-auth";
+import { backendOrigin, proxyBackendRequest } from "@/lib/server-backend";
 import { z } from "zod";
 export const runtime = "nodejs";
 const input = z.object({
@@ -16,6 +17,7 @@ const input = z.object({
 });
 const requests: number[] = [];
 export async function POST(request: Request) {
+  if (backendOrigin() && !process.env.GROQ_API_KEY) return proxyBackendRequest(request);
   if (!(await auth.api.getSession({ headers: request.headers })))
     return Response.json({ error: "Anmeldung erforderlich." }, { status: 401 });
   const host = request.headers.get("host") || "";
@@ -32,7 +34,7 @@ export async function POST(request: Request) {
     return Response.json(
       {
         error:
-          "Groq ist noch nicht eingerichtet. Hinterlege GROQ_API_KEY in .env.local.",
+          "Der KI-Assistent ist noch nicht aktiviert. Bitte wende dich an den Betreiber.",
       },
       { status: 503 },
     );

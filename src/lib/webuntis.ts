@@ -38,10 +38,27 @@ export function normalizeSchool(raw: string): string | null {
   const value = raw.trim();
   if (!value) return null;
   const fromUrl = value.match(/[?&]school=([^&#\s]+)/i)?.[1];
-  const candidate = (fromUrl ?? value).trim();
+  let candidate: string;
+  try {
+    candidate = decodeURIComponent(fromUrl ?? value).trim();
+  } catch {
+    return null;
+  }
   if (!candidate || candidate.length > 80) return null;
-  if (/[\s/\\?#]/.test(candidate)) return null;
-  return decodeURIComponent(candidate);
+  if (/[\s/\\?#\x00-\x1f\x7f]/.test(candidate)) return null;
+  return candidate;
+}
+
+/** Zugangsdaten ausschließlich an echte WebUntis-Hosts senden. */
+export function isWebUntisServer(server: string): boolean {
+  return /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+webuntis\.com$/.test(server);
+}
+
+export class WebUntisApiError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = "WebUntisApiError";
+  }
 }
 
 export function normalizeUsername(raw: string): string | null {
@@ -87,7 +104,7 @@ export function mapSchoolSearchResponse(data: unknown): SchoolSuggestion[] {
     const school = schoolSuggestion.safeParse(entry);
     if (!school.success) continue;
     const server = normalizeServer(school.data.server);
-    if (!server) continue;
+    if (!server || !isWebUntisServer(server)) continue;
     out.push({ ...school.data, server });
     if (out.length >= 20) break;
   }
@@ -102,6 +119,8 @@ export async function searchSchools(
   const response = await fetch(SCHOOL_SEARCH_URL, {
     method: "POST",
     signal,
+    cache: "no-store",
+    redirect: "error",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       id: "school-os",
@@ -129,6 +148,8 @@ export interface WebUntisFailure {
  * Zugangsdaten oder Hosts werden nie in Meldungen zurückgegeben.
  */
 export function classifyTimetableError(error: unknown): WebUntisFailure {
+  if (error instanceof WebUntisApiError)
+    return { status: error.status, error: error.message };
   const message = error instanceof Error ? error.message : "";
   if (/bad credentials|failed to login|login returned error|unauthor|forbidden/i.test(message))
     return {
@@ -142,7 +163,8 @@ export function classifyTimetableError(error: unknown): WebUntisFailure {
       error:
         "Der Server wurde nicht gefunden. Bitte die Serveradresse aus der Schulsuche übernehmen.",
     };
-  if (/timeout|zeitüberschreitung|aborted|abort/i.test(message))
+  if (/timeout|zeitüberschreitung|aborted|abort/i.test(message) ||
+    (error instanceof Error && /TimeoutError|AbortError/.test(error.name)))
     return {
       status: 504,
       error:
