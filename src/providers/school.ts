@@ -14,7 +14,11 @@ const timeSlot = z
   .regex(
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/,
     "Format JJJJ-MM-TTTHH:mm erwartet, z. B. 2026-09-29T08:00",
-  );
+  )
+  .refine((value) => {
+    const date = new Date(`${value}:00Z`);
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 16) === value;
+  }, "Bitte ein gültiges Datum und eine gültige Uhrzeit eingeben.");
 const timetableEntry = z.object({
   subject: z.string().trim().min(1).max(140),
   start: timeSlot,

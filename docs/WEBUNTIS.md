@@ -1,10 +1,19 @@
 # WebUntis verbinden
 
-Unter **WebUntis → Live aus WebUntis abrufen** die Schule suchen, den Treffer
+Unter **WebUntis → Mit WebUntis verbinden** die Schule suchen, den Treffer
 übernehmen und den persönlichen WebUntis-Benutzernamen sowie das zugehörige
 Passwort eintragen. Danach 7 oder 14 Tage abrufen, die Vorschau prüfen und die
-Stunden übernehmen. Fächer werden bei Bedarf angelegt; Ausfälle und Änderungen
+Stunden übernehmen. Die Vorschau zeigt die Stunden nach Tagen mit Zeiten,
+Räumen, Lehrkräften, Ausfällen und Änderungen. Server und Schulkürzel lassen
+sich bei Bedarf unter „Server manuell bearbeiten“ anpassen. Der Dateiimport
+bleibt als aufklappbare Alternative verfügbar. Fächer werden bei Bedarf angelegt; Ausfälle und Änderungen
 werden aus der API übernommen.
+
+Beim Ersetzen werden nur WebUntis-Stunden im abgefragten Zeitraum aktualisiert.
+Eigene Termine und andere Zeiträume bleiben erhalten. Beim Ergänzen ersetzt
+eine erneut übernommene Stunde denselben Fach-/Zeitslot, statt Duplikate anzulegen.
+Der Status zeigt einen gespeicherten Plan und die letzte Übernahme; der Abruf
+läuft manuell. Das Passwort wird direkt nach dem Abruf aus dem Formular geleert.
 
 Die voreingestellte Schule BG/BRG Neusiedl/See verwendet
 `gymnasium-neusiedl.webuntis.com` und das Schulkürzel `gymnasium-neusiedl`.

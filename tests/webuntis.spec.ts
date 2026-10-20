@@ -288,31 +288,80 @@ test("live timetable preview imports subjects and lessons without storing the pa
     data: { email: `untis-${randomUUID()}@example.test`, password: "webuntis-test-password-123", name: "Untis Test" },
   });
   expect(signup.ok()).toBeTruthy();
+  const preserved = { id: "future", subjectId: "previous-subject", start: "2026-12-01T08:00", end: "2026-12-01T08:50", room: "", teacher: "", status: "regular" as const, source: "webuntis" as const };
+  const manual = { ...preserved, id: "manual", source: "manual" as const, start: "2026-10-20T09:00", end: "2026-10-20T09:50" };
   await page.addInitScript((workspace) => {
     if (!localStorage.getItem("school-os-v1"))
       localStorage.setItem("school-os-v1", JSON.stringify({ state: workspace, version: 0 }));
-  }, { ...emptyWorkspace(), onboarded: true });
+  }, { ...emptyWorkspace(), onboarded: true, lessons: [preserved, manual] });
+  let mode: "success" | "empty" | "failure" = "success";
+  await page.route("**/api/webuntis?**", (route) => route.fulfill({ json: { schools: [{
+    server: "gymnasium-neusiedl.webuntis.com", loginName: "gymnasium-neusiedl", displayName: "BG/BRG Neusiedl/See", address: "Neusiedl am See",
+  }] } }));
   await page.route("**/api/webuntis", async (route) => {
     expect(route.request().postDataJSON()).toMatchObject({
       server: "gymnasium-neusiedl.webuntis.com", school: "gymnasium-neusiedl",
-      username: "student", password: "private-untis-password", days: 7,
+      username: "student", password: "private-untis-password",
     });
-    await route.fulfill({ json: { lessons: [{ subject: "Mathematik", start: "2026-10-20T08:00", end: "2026-10-20T08:50", room: "B207", teacher: "HUB", status: "changed" }] } });
+    if (mode === "failure") { await route.fulfill({ status: 403, json: { error: "Der API-Zugriff ist für diesen Zugang nicht freigeschaltet." } }); return; }
+    await route.fulfill({ json: { lessons: mode === "empty" ? [] : [
+      { subject: "Mathematik", start: "2026-10-20T08:00", end: "2026-10-20T08:50", room: "B207", teacher: "HUB", status: "changed" },
+      { subject: "Deutsch", start: "2026-10-20T09:00", end: "2026-10-20T09:50", room: "A102", teacher: "BER", status: "cancelled" },
+      { subject: "Englisch", start: "2026-10-21T10:00", end: "2026-10-21T10:50", room: "C108", teacher: "WAG", status: "regular" },
+    ], range: { startDate: 20261020, endDate: 20261026 } } });
   });
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
   await page.goto("/");
   await page.locator(".webuntis-link").click();
+  await page.screenshot({ path: "test-results/webuntis-desktop.png", fullPage: true, animations: "disabled" });
+  await page.getByRole("button", { name: "Ändern", exact: true }).click();
+  await page.getByLabel("Schulname oder Ort").fill("Neusiedl");
+  await page.getByRole("button", { name: "Schule suchen", exact: true }).click();
+  await page.getByRole("button", { name: "BG/BRG Neusiedl/See Neusiedl am See" }).click();
   await page.locator("#live-user").fill("student");
   await page.locator("#live-password").fill("private-untis-password");
-  await page.getByRole("button", { name: "Abrufen und prüfen", exact: true }).click();
-  await expect(page.getByText("1 Stunde bereit", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Passwort anzeigen", exact: true }).click();
+  await expect(page.locator("#live-password")).toHaveAttribute("type", "text");
+  await page.getByRole("button", { name: "Passwort verbergen", exact: true }).click();
+  await page.getByRole("button", { name: "Stundenplan abrufen", exact: true }).click();
+  await expect(page.getByText("3 Stunden bereit", { exact: false })).toBeVisible();
+  await expect(page.getByText("Entfällt", { exact: true })).toBeVisible();
+  await expect(page.getByText("Geändert", { exact: true })).toBeVisible();
+  await expect(page.locator("#live-password")).toHaveValue("");
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.screenshot({ path: "test-results/webuntis-preview-desktop.png", fullPage: true, animations: "disabled" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".sidebar")).toBeHidden();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.screenshot({ path: "test-results/webuntis-preview-mobile.png", fullPage: true, animations: "disabled" });
+  await page.evaluate(() => document.documentElement.dataset.theme = "dark");
+  await page.screenshot({ path: "test-results/webuntis-preview-dark.png", fullPage: true, animations: "disabled" });
+  await page.evaluate(() => document.documentElement.dataset.theme = "light");
   await page.getByRole("button", { name: "Übernehmen", exact: true }).click();
-  await expect(page.getByRole("status").filter({ hasText: "1 Stunde übernommen." })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "3 Stunden übernommen." })).toBeVisible();
   await expect(page.locator("#live-password")).toHaveValue("");
   const stored = await page.evaluate(() => ({
     workspace: JSON.parse(localStorage.getItem("school-os-v1")!).state,
     storage: JSON.stringify({ ...localStorage }),
   }));
   expect(stored.workspace.subjects).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Mathematik" })]));
-  expect(stored.workspace.lessons).toEqual([expect.objectContaining({ source: "webuntis", room: "B207", status: "changed" })]);
+  expect(stored.workspace.lessons).toHaveLength(5);
+  expect(stored.workspace.lessons).toEqual(expect.arrayContaining([preserved, manual, expect.objectContaining({ source: "webuntis", room: "B207", status: "changed" })]));
   expect(stored.storage).not.toContain("private-untis-password");
+  mode = "empty";
+  await page.getByRole("button", { name: "Zwei Wochen" }).click();
+  await page.locator("#live-password").fill("private-untis-password");
+  await page.getByRole("button", { name: "Stundenplan abrufen", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Abruf erfolgreich. Gerade keine Stunden." })).toBeVisible();
+  mode = "failure";
+  await page.locator("#live-password").fill("private-untis-password");
+  await page.getByRole("button", { name: "Stundenplan abrufen", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Mit WebUntis verbinden" }).getByRole("alert")).toContainText("API-Zugriff");
+  await page.getByText("Du hast bereits eine Datei?", { exact: true }).click();
+  await page.getByLabel("Stundenplan-JSON").fill('{"lessons":[{"subject":"Test","start":"2026-02-30T08:00","end":"2026-02-30T08:50"}]}');
+  await page.getByRole("button", { name: "Datei prüfen" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "gültiges Datum" })).toBeVisible();
+  expect(browserErrors).toEqual([]);
 });

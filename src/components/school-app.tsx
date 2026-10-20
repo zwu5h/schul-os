@@ -495,7 +495,7 @@ export function SchoolApp({ userId }: { userId: string }) {
                 : "main-content"
           }
         >
-          {view !== "today" && view !== "ai" && view !== "canvas" && (
+          {view !== "today" && view !== "ai" && view !== "canvas" && view !== "webuntis" && (
             <div className="page-heading">
               <div>
                 {activeId && (
