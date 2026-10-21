@@ -19,6 +19,11 @@ function db() {
       updated_at INTEGER NOT NULL,
       PRIMARY KEY (user_id, kind, id)
     )`);
+    database.exec(`CREATE TABLE IF NOT EXISTS synced_flashcard_categories (
+    user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    PRIMARY KEY (user_id, name)
+    )`);
   }
   return database;
 }
@@ -61,7 +66,12 @@ export async function POST(request: Request) {
     }
     const rows = database.prepare("SELECT kind,id,data FROM synced_study_materials WHERE user_id=?")
       .all(userId) as { kind: "notes" | "flashcards"; id: string; data: string | null }[];
+    const saveCategory = database.prepare("INSERT OR IGNORE INTO synced_flashcard_categories (user_id, name) VALUES (?, ?)");
+    const names = new Set([...(parsed.data.flashcardCategories ?? []), ...parsed.data.flashcards.flatMap(c => c.category ? [c.category] : [])]);
+    for (const name of names) saveCategory.run(userId, name);
+    const categories = database.prepare("SELECT name FROM synced_flashcard_categories WHERE user_id=? ORDER BY name").all(userId) as { name: string }[];
     return {
+      flashcardCategories: categories.map(category => category.name),
       notes: rows.filter(r => r.kind === "notes" && r.data !== null).map(r => JSON.parse(r.data!)),
       flashcards: rows.filter(r => r.kind === "flashcards" && r.data !== null).map(r => JSON.parse(r.data!)),
       deletedIds: [...new Set(rows.filter(r => r.data === null).map(r => r.id))],

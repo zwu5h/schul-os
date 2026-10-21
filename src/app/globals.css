@@ -3113,3 +3113,10 @@ a {
     display: none;
   }
 }
+.material-subject { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 12px; min-width: 0; }
+.material-subject select { color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px; max-width: 180px; min-width: 0; }
+.subject-management { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+@media (max-width: 650px) {
+  .task-manage, .file-row, .document-top, .document-top .toolbar { flex-wrap: wrap; }
+  .material-subject select { max-width: 140px; }
+}

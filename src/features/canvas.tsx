@@ -1,4 +1,5 @@
 "use client";
+import { SubjectSelect } from "@/components/subject-select";
 import {
   Excalidraw,
   convertToExcalidrawElements,
@@ -183,6 +184,7 @@ export default function Canvas({
         >
           <ArrowLeft size={18} />
         </button>
+        <SubjectSelect kind="boards" id={id} />
         <div className="whiteboard-title-group">
           <input
             key={board?.id}

@@ -1,4 +1,5 @@
 "use client";
+import { SubjectSelect } from "@/components/subject-select";
 import { get, set, del } from "@/lib/local-data";
 import Image from "next/image";
 import { useRef, useState } from "react";
@@ -117,6 +118,7 @@ export function Files({
                 {w.subjects.find((s) => s.id === f.subjectId)?.name || "Inbox"}
               </small>
             </button>
+            <SubjectSelect kind="files" id={f.id} />
             {f.text && (
               <button
                 className="text-button"

@@ -1,4 +1,5 @@
 "use client";
+import { SubjectSelect } from "@/components/subject-select";
 import { Fragment, useState } from "react";
 import {
   ChevronLeft,
@@ -64,6 +65,7 @@ export function Tasks({
         {tasks.map((t) => (
           <div className="task-manage" key={t.id}>
             <TaskRow task={t} />
+            <SubjectSelect kind="tasks" id={t.id} />
             <select
               aria-label={`Status ${t.title}`}
               value={t.status}
@@ -225,6 +227,7 @@ export function Calendar({ create }: { create: () => void }) {
                     <small>PRÜFUNG</small>
                     <strong>{e.title}</strong>
                     <p>{e.topics}</p>
+                    <SubjectSelect kind="exams" id={e.id} />
                     <button
                       className="text-button"
                       onClick={() => {

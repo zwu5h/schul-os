@@ -2,6 +2,13 @@
 
 ## Verbundene Cloud-Instanz
 
+Am 21.10.2026 wurde das pausierte Projekt über das Dashboard wieder aufgenommen.
+Nach vollständiger Wiederherstellung waren alle elf Anwendungstabellen vorhanden.
+Die Migration `0002_flashcard_categories.sql` wurde im SQL Editor angewendet:
+`public.flashcards.category` ist `text NOT NULL DEFAULT ''`.
+Die Ausführung über den SQL Editor erzeugt keinen CLI-Migrationshistorieneintrag;
+vor dem nächsten CLI-Push auch `0002` als angewendet markieren.
+
 Am 30.09.2026 wurde das Projekt `schul-os` mit der URL
 `https://vqpjynwhthjxijmdvjym.supabase.co` lokal in `.env.local` verbunden.
 Die Foundation-Migration wurde über den SQL Editor erfolgreich angewendet.

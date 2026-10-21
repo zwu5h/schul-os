@@ -92,17 +92,19 @@ test("study materials persist across sessions and remain private; edits and dele
   const guest = await playwright.request.newContext({ baseURL });
   const stamp = new Date().toISOString();
   const note = { id: randomUUID(), subjectId: null, title: "Spanisch", content: "<p>he hablado</p>", createdAt: stamp, updatedAt: stamp };
-  const card = { id: randomUUID(), subjectId: null, front: "die Kindheit", back: "la infancia", known: false, createdAt: stamp, updatedAt: stamp };
+  const card = { id: randomUUID(), subjectId: null, front: "die Kindheit", back: "la infancia", known: false, category: "Vokabeln", createdAt: stamp, updatedAt: stamp };
   const empty = { notes: [], flashcards: [], deletedIds: [] };
   try {
     expect((await guest.post("/api/study-materials", { data: empty })).status()).toBe(401);
     await signup(a); await signup(b);
-    expect((await a.post("/api/study-materials", { data: { ...empty, notes: [note], flashcards: [card] } })).ok()).toBeTruthy();
+    expect((await a.post("/api/study-materials", { data: { ...empty, notes: [note], flashcards: [card], flashcardCategories: ["Grammatik"] } })).ok()).toBeTruthy();
     const secondDevice = await playwright.request.newContext({ baseURL, storageState: await a.storageState() });
     try {
       const pulled = await (await secondDevice.post("/api/study-materials", { data: empty })).json();
       expect(pulled.notes).toEqual([note]);
       expect(pulled.flashcards).toEqual([card]);
+      expect(pulled.flashcardCategories).toEqual(["Grammatik", "Vokabeln"]);
+      expect((await (await b.post("/api/study-materials", { data: empty })).json()).flashcardCategories).toEqual([]);
       expect((await (await b.post("/api/study-materials", { data: empty })).json()).notes).toEqual([]);
       const privateCopy = { ...note, content: "<p>Anderes Konto</p>" };
       await b.post("/api/study-materials", { data: { ...empty, notes: [privateCopy] } });

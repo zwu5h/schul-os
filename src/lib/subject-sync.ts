@@ -57,7 +57,7 @@ export function initSubjectSync(): () => void {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: snapshot.notes, flashcards: snapshot.flashcards, deletedIds: snapshot.deletedIds }),
+        body: JSON.stringify({ flashcardCategories: snapshot.flashcardCategories ?? [], notes: snapshot.notes, flashcards: snapshot.flashcards, deletedIds: snapshot.deletedIds }),
         signal: abort.signal,
       });
       if (!studyResponse.ok) throw new Error(studyResponse.status === 401
@@ -74,15 +74,17 @@ export function initSubjectSync(): () => void {
       }
       for (const id of deleted) subjects.delete(id);
       const merged = [...subjects.values()];
+      const flashcardCategories = [...new Set([...(latest.flashcardCategories ?? []), ...(study.flashcardCategories ?? [])])];
       const notes = mergeItems(latest.notes, study.notes, deleted);
       const flashcards = mergeItems(latest.flashcards, study.flashcards, deleted);
       const onboarded = latest.onboarded || study.notes.length > 0 || study.flashcards.length > 0;
       applying = true;
       if (JSON.stringify(merged) !== JSON.stringify(latest.subjects) ||
           JSON.stringify(notes) !== JSON.stringify(latest.notes) ||
+          JSON.stringify(flashcardCategories) !== JSON.stringify(latest.flashcardCategories ?? []) ||
           JSON.stringify(flashcards) !== JSON.stringify(latest.flashcards) ||
           deleted.size !== latest.deletedIds.length || onboarded !== latest.onboarded) {
-        latest.patch({ subjects: merged, notes, flashcards, onboarded, deletedIds: [...deleted] });
+        latest.patch({ flashcardCategories, subjects: merged, notes, flashcards, onboarded, deletedIds: [...deleted] });
       }
       applying = false;
       useSubjectSync.setState({ lastSync: new Date().toISOString(), error: null });
@@ -99,7 +101,7 @@ export function initSubjectSync(): () => void {
   useSubjectSync.setState({ running: false, lastSync: null, error: null, syncNow: sync });
   const unsubscribe = useWorkspace.subscribe((state, previous) => {
     if (!applying && (state.subjects !== previous.subjects || state.notes !== previous.notes ||
-        state.flashcards !== previous.flashcards || state.deletedIds !== previous.deletedIds || state.ready !== previous.ready)) schedule();
+        state.flashcardCategories !== previous.flashcardCategories || state.flashcards !== previous.flashcards || state.deletedIds !== previous.deletedIds || state.ready !== previous.ready)) schedule();
   });
   const refresh = () => { if (document.visibilityState === "visible") void sync(); };
   window.addEventListener("online", refresh);

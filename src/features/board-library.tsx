@@ -1,4 +1,5 @@
 "use client";
+import { SubjectSelect } from "@/components/subject-select";
 import { useRef, useState } from "react";
 import {
   Copy,
@@ -222,6 +223,7 @@ export function BoardLibrary({
                   </small>
                 </div>
               </button>
+              <SubjectSelect kind="boards" id={board.id} />
               <div className="whiteboard-card-actions">
                 <button
                   onClick={() => setEdit(board)}

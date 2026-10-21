@@ -58,6 +58,7 @@ export interface Flashcard extends Entity {
   back: string;
   subjectId: string | null;
   known: boolean;
+  category?: string;
 }
 export interface Profile {
   name: string;
@@ -74,6 +75,7 @@ export interface Workspace {
   files: SchoolFile[];
   messages: Message[];
   flashcards: Flashcard[];
+  flashcardCategories?: string[];
   profile: Profile;
   demo: boolean;
   theme: "light" | "dark";

@@ -8,6 +8,7 @@ const entity = {
 };
 
 export const studyMaterialsSchema = z.object({
+  flashcardCategories: z.array(z.string().trim().min(1).max(80)).max(1000).optional(),
   notes: z.array(z.object({
     ...entity,
     title: z.string().max(1000),
@@ -18,6 +19,7 @@ export const studyMaterialsSchema = z.object({
     front: z.string().max(100_000),
     back: z.string().max(100_000),
     known: z.boolean(),
+    category: z.string().max(80).optional(),
   })).max(20_000),
   deletedIds: z.array(z.uuid()).max(10_000),
 });

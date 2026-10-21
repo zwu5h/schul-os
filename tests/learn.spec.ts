@@ -6,11 +6,20 @@ let session: Awaited<ReturnType<BrowserContext["storageState"]>>;
 const firstId = randomUUID();
 const secondId = randomUUID();
 const subjectId = randomUUID();
+const otherSubjectId = randomUUID();
+const noteId = randomUUID();
+const boardId = randomUUID();
 const now = new Date().toISOString();
 const workspace = {
   ...emptyWorkspace(),
   onboarded: true,
+  notes: [{ id: noteId, subjectId, title: "Notiz zum Verschieben", content: "<p>Inhalt bleibt</p>", createdAt: now, updatedAt: now }],
+  boards: [{ id: boardId, subjectId, title: "Whiteboard zum Verschieben", createdAt: now, updatedAt: now }],
+  files: [{ id: randomUUID(), subjectId, name: "Material.txt", type: "text/plain", size: 10, createdAt: now, updatedAt: now }],
+  tasks: [{ id: randomUUID(), subjectId, title: "Aufgabe", due: "2026-10-21", priority: "normal" as const, status: "todo" as const, createdAt: now, updatedAt: now }],
+  exams: [{ id: randomUUID(), subjectId, title: "Prüfung", date: "2026-10-21", topics: "Zellen", createdAt: now, updatedAt: now }],
   subjects: [
+    { id: otherSubjectId, name: "Chemie", color: "#428572", icon: "C", teacher: "", room: "", createdAt: now, updatedAt: now },
     {
       id: subjectId,
       name: "Biologie",
@@ -62,12 +71,12 @@ const study = (page: Page) =>
 const current = (page: Page) =>
   study(page).getByRole("button", { name: /Zum Umdrehen klicken/ });
 
-test.beforeAll(async ({ playwright }) => {
+test.beforeEach(async ({ playwright }) => {
   const request = await playwright.request.newContext({
     baseURL: test.info().project.use.baseURL!,
   });
   const response = await request.post("/api/auth/sign-up/email", {
-    headers: { origin: test.info().project.use.baseURL! },
+    headers: { origin: test.info().project.use.baseURL!, "x-real-ip": `198.51.100.${test.info().testId.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0) % 250 + 1}` },
     data: {
       email: `learn-${randomUUID()}@example.test`,
       password: "learn-test-password-123",
@@ -104,12 +113,9 @@ test("flip, keyboard navigation, assessment and missed-only round persist", asyn
   await expect(current(page)).toHaveAccessibleName(
     /Antwort: Steuert die Zelle/,
   );
-  await page.keyboard.press("ArrowRight");
-  await expect(current(page)).toHaveAccessibleName(/Frage: Mitochondrien/);
   await page.keyboard.press("ArrowLeft");
-  await page.keyboard.press("1");
   await expect(current(page)).toHaveAccessibleName(/Frage: Mitochondrien/);
-  await page.keyboard.press("2");
+  await page.keyboard.press("ArrowRight");
   await expect(study(page).getByRole("status")).toContainText(
     "1 von 2 Karten gewusst",
   );
@@ -117,10 +123,10 @@ test("flip, keyboard navigation, assessment and missed-only round persist", asyn
     "aria-valuenow",
     "2",
   );
-  await page.getByRole("button", { name: "Noch einmal üben (1)" }).click();
+  await page.getByRole("button", { name: "Nicht gewusste Karten nochmals lernen (1)" }).click();
   await expect(current(page)).toHaveAccessibleName(/Frage: Zellkern/);
   await expect(study(page).getByText("1 / 1", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Gewusst", exact: false }).click();
+  await page.getByRole("button", { name: /^Gewusst/ }).click();
   await expect(study(page).getByRole("status")).toContainText("Alles gewusst");
   await page.reload();
   await openCards(page);
@@ -195,10 +201,9 @@ test("import, editing, deletion and progress reset survive reload", async ({
     page.getByRole("region", { name: "Karten in diesem Lernset" }),
   ).toContainText("Photosynthese");
   page.once("dialog", (dialog) => dialog.accept());
-  await page
-    .getByRole("button", { name: "Karte 4 löschen", exact: true })
-    .click();
-  await page.getByRole("button", { name: /Gewusst/ }).click();
+  await page.getByRole("button", { name: "Karte 4 bearbeiten", exact: true }).click();
+  await page.getByRole("button", { name: "Lernkarte löschen", exact: true }).click();
+  await page.getByRole("button", { name: /^Gewusst/ }).click();
   await page.getByRole("button", { name: "Optionen" }).click();
   await page
     .getByRole("button", { name: "Lernfortschritt zurücksetzen" })
@@ -266,7 +271,7 @@ test.describe("phone", () => {
     ).toHaveCount(0);
     await page.keyboard.press("Shift+Tab");
     await expect(
-      page.getByRole("button", { name: "Gewusst", exact: false }),
+      page.getByRole("button", { name: /^Gewusst/ }),
     ).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(
@@ -277,4 +282,70 @@ test.describe("phone", () => {
       fullPage: true,
     });
   });
+});
+
+
+test("categories filter cards, apply to new cards and survive reload", async ({ page }) => {
+  await page.getByRole("button", { name: "Kategorie erstellen", exact: true }).click();
+  await page.getByRole("dialog").getByLabel("Name", { exact: true }).fill("Zellbiologie");
+  await page.getByRole("dialog").getByRole("button", { name: "Kategorie erstellen", exact: true }).click();
+  await expect(page.getByLabel("Kategorie", { exact: true })).toHaveValue("Zellbiologie");
+  await page.getByRole("button", { name: "Erste Lernkarte erstellen" }).click();
+  await expect(page.getByRole("dialog").getByLabel("Kategorie", { exact: true })).toHaveValue("Zellbiologie");
+  await page.getByLabel("Frage", { exact: true }).fill("Ribosomen");
+  await page.getByLabel("Antwort", { exact: true }).fill("Bilden Proteine");
+  await page.getByRole("button", { name: "Neue Lernkarte erstellen", exact: true }).click();
+  await expect(current(page)).toHaveAccessibleName(/Frage: Ribosomen/);
+  await expect(study(page).getByText("1 / 1", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Lernkarte bearbeiten", exact: true }).click();
+  await page.getByLabel("Frage", { exact: true }).press("ArrowRight");
+  await page.getByRole("button", { name: "Schließen", exact: true }).click();
+  await expect(page.locator(".view-actions")).toContainText("0 von 1 Karten gelernt");
+  await page.reload();
+  await openCards(page);
+  await page.getByLabel("Kategorie", { exact: true }).selectOption("Zellbiologie");
+  await expect(current(page)).toHaveAccessibleName(/Frage: Ribosomen/);
+  await expect(page.getByRole("button", { name: /Karte \d löschen/ })).toHaveCount(0);
+  await page.getByLabel("Kategorie", { exact: true }).selectOption("__none");
+  await expect(study(page).getByText("1 / 2", { exact: true })).toBeVisible();
+});
+
+test("subjects can be edited and deleted while moving all their contents", async ({ page }) => {
+  await page.locator(".subject-nav").getByRole("button", { name: "Biologie", exact: true }).click();
+  await page.getByRole("button", { name: "Fach bearbeiten", exact: true }).click();
+  await page.getByRole("dialog").getByLabel("Name", { exact: true }).fill("Naturwissenschaften");
+  await page.getByRole("dialog").getByLabel("Lehrkraft").fill("Frau Test");
+  await page.getByRole("button", { name: "Änderungen speichern", exact: true }).click();
+  await expect(page.locator(".subject-nav")).toContainText("Naturwissenschaften");
+  await page.getByRole("button", { name: "Fach löschen", exact: true }).click();
+  await page.getByLabel("Inhalte verschieben nach").selectOption(otherSubjectId);
+  await page.getByRole("button", { name: "Fach löschen und Inhalte behalten", exact: true }).click();
+  await expect(page.locator(".subject-nav")).not.toContainText("Naturwissenschaften");
+  await openCards(page);
+  await expect(current(page)).toHaveAccessibleName(/Frage: Zellkern/);
+  await expect.poll(() => page.evaluate(() => ["notes", "boards", "files", "tasks", "exams", "flashcards"].every(kind => JSON.parse(localStorage.getItem("school-os-v1")!).state[kind].every((c: {subjectId: string | null}) => c.subjectId === JSON.parse(localStorage.getItem("school-os-v1")!).state.subjects.find((s: {name: string}) => s.name === "Chemie").id)))).toBe(true);
+  await page.reload();
+  await openCards(page);
+  await expect(page.locator(".subject-nav")).not.toContainText("Naturwissenschaften");
+  await page.locator(".subject-nav").getByRole("button", { name: "Chemie", exact: true }).click();
+  await page.getByRole("button", { name: "Fach löschen", exact: true }).click();
+  await page.getByRole("button", { name: "Fach löschen und Inhalte behalten", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => ["notes", "boards", "files", "tasks", "exams", "flashcards"].every(kind => JSON.parse(localStorage.getItem("school-os-v1")!).state[kind].every((item: {subjectId: string | null}) => item.subjectId === null)))).toBe(true);
+});
+
+
+test("individual notes and whiteboards move to another subject without losing contents", async ({ page }) => {
+  await page.locator(".sidebar").getByRole("button", { name: "Notizen", exact: true }).click();
+  await page.getByRole("button", { name: /Notiz zum Verschieben/ }).click();
+  await expect(page.locator(".tiptap")).toContainText("Inhalt bleibt");
+  await page.getByLabel("In anderes Fach verschieben").selectOption(otherSubjectId);
+  await expect(page.locator(".tiptap")).toContainText("Inhalt bleibt");
+  await page.locator(".sidebar").getByRole("button", { name: "Whiteboards", exact: true }).click();
+  await page.locator(".whiteboard-card").filter({ hasText: "Whiteboard zum Verschieben" }).getByLabel("In anderes Fach verschieben").selectOption(otherSubjectId);
+  await page.reload();
+  await expect(page.locator(".whiteboard-card").filter({ hasText: "Whiteboard zum Verschieben" }).getByLabel("In anderes Fach verschieben")).toHaveValue(otherSubjectId);
+  await page.locator(".sidebar").getByRole("button", { name: "Notizen", exact: true }).click();
+  await page.getByRole("button", { name: /Notiz zum Verschieben/ }).click();
+  await expect(page.getByLabel("In anderes Fach verschieben")).toHaveValue(otherSubjectId);
+  await expect(page.locator(".tiptap")).toContainText("Inhalt bleibt");
 });

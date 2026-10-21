@@ -30,6 +30,7 @@ import { initAutoSync } from "@/lib/sync";
 import { initSubjectSync } from "@/lib/subject-sync";
 import { demoWorkspace, emptyWorkspace } from "@/lib/demo";
 import { entity, type View } from "@/types/school";
+import { SubjectManager } from "@/features/subject-manager";
 import { BoardLibrary } from "@/features/board-library";
 import { Dashboard } from "@/features/dashboard";
 import { Capture, type CaptureKind } from "@/features/capture";
@@ -87,6 +88,7 @@ export function SchoolApp({ userId }: { userId: string }) {
   const [view, setView] = useState<View>("canvas");
   const [subjectId, setSubjectId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [cardCategory, setCardCategory] = useState("");
   const [capture, setCapture] = useState<CaptureKind | null>(null);
   const [search, setSearch] = useState(false);
   const [query, setQuery] = useState("");
@@ -531,6 +533,7 @@ export function SchoolApp({ userId }: { userId: string }) {
                 <>
                   <div className="view-actions">
                     <p>Alles zu {subject.name}, an einem Ort.</p>
+                    <SubjectManager key={subject.id} subject={subject} deleted={() => go("subjects")} />
                     <button
                       className="button"
                       onClick={() => {
@@ -762,7 +765,10 @@ export function SchoolApp({ userId }: { userId: string }) {
           {view === "learn" && (
             <Learn
               subjectId={subjectId}
-              create={() => setCapture("flashcard")}
+              create={(category) => {
+                setCardCategory(category ?? "");
+                setCapture("flashcard");
+              }}
             />
           )}
           {view === "settings" && <Settings />}
@@ -826,6 +832,7 @@ export function SchoolApp({ userId }: { userId: string }) {
       {capture && (
         <Capture
           kind={capture}
+          category={cardCategory}
           subjectId={subjectId}
           close={() => setCapture(null)}
           created={(id) => {

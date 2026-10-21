@@ -26,11 +26,80 @@ import { trackDelete, useWorkspace } from "@/lib/store";
 import { entity, type Flashcard } from "@/types/school";
 import styles from "./learn.module.css";
 
-type Props = { subjectId: string | null; create: () => void };
+type Props = { subjectId: string | null; create: (category?: string) => void };
 
 // Changing subjects starts an independent round and clears the previous answer.
 export function Learn(props: Props) {
-  return <StudySession key={props.subjectId ?? "all"} {...props} />;
+  const w = useWorkspace();
+  const [category, setCategory] = useState("");
+  const [creatingCategory, setCreatingCategory] = useState(false);
+  const categories = [
+    ...new Set([
+      ...(w.flashcardCategories ?? []),
+      ...w.flashcards.flatMap((c) => (c.category ? [c.category] : [])),
+    ]),
+  ].sort();
+  return (
+    <>
+      <div className={styles.categoryBar}>
+        <label>
+          Kategorie
+          <select
+            aria-label="Kategorie"
+            value={category}
+            onChange={(event) => setCategory(event.target.value)}
+          >
+            <option value="">Alle Kategorien</option>
+            <option value="__none">Ohne Kategorie</option>
+            {categories.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="button" onClick={() => setCreatingCategory(true)}>
+          <Plus size={16} /> Kategorie erstellen
+        </button>
+      </div>
+      <StudySession
+        key={`${props.subjectId ?? "all"}:${category}`}
+        {...props}
+        category={category}
+      />
+      {creatingCategory && (
+        <Modal
+          title="Kategorie erstellen"
+          close={() => setCreatingCategory(false)}
+        >
+          <form
+            className="form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const name = String(
+                new FormData(event.currentTarget).get("name") || "",
+              ).trim();
+              if (!name || name === "__none") return;
+              const latest = useWorkspace.getState();
+              latest.patch({
+                flashcardCategories: [
+                  ...new Set([...(latest.flashcardCategories ?? []), name]),
+                ],
+              });
+              setCategory(name);
+              setCreatingCategory(false);
+            }}
+          >
+            <label>
+              Name
+              <input name="name" required maxLength={80} autoFocus />
+            </label>
+            <button className="button primary">Kategorie erstellen</button>
+          </form>
+        </Modal>
+      )}
+    </>
+  );
 }
 
 function shuffled(ids: string[]) {
@@ -42,10 +111,18 @@ function shuffled(ids: string[]) {
   return result;
 }
 
-function StudySession({ subjectId, create }: Props) {
+function StudySession({
+  subjectId,
+  create: createCard,
+  category,
+}: Props & { category: string }) {
+  const create = () => createCard(category === "__none" ? "" : category);
   const w = useWorkspace();
   const cards = w.flashcards.filter(
-    (c) => !subjectId || c.subjectId === subjectId,
+    (c) =>
+      (!subjectId || c.subjectId === subjectId) &&
+      (!category ||
+        (category === "__none" ? !c.category : c.category === category)),
   );
   const [roundIds, setRoundIds] = useState<string[] | null>(null);
   const [index, setIndex] = useState(0);
@@ -90,6 +167,7 @@ function StudySession({ subjectId, create }: Props) {
 
   function rate(known: boolean) {
     if (!card) return;
+    setPlaying(false);
     const latest = useWorkspace.getState();
     latest.patch({
       flashcards: latest.flashcards.map((c) =>
@@ -113,7 +191,7 @@ function StudySession({ subjectId, create }: Props) {
   }
 
   function remove(cardToDelete: Flashcard) {
-    if (!confirm("Lernkarte löschen?")) return;
+    if (!confirm("Lernkarte endgültig löschen?")) return false;
     const latest = useWorkspace.getState();
     latest.patch({
       flashcards: latest.flashcards.filter((c) => c.id !== cardToDelete.id),
@@ -125,6 +203,7 @@ function StudySession({ subjectId, create }: Props) {
     // Keep the successor selected, or return to the final card when deleting it.
     const remaining = round.filter((c) => c.id !== cardToDelete.id);
     setIndex(Math.min(index, Math.max(0, remaining.length - 1)));
+    return true;
   }
 
   function speak() {
@@ -145,6 +224,8 @@ function StudySession({ subjectId, create }: Props) {
       }
       if (
         event.defaultPrevented ||
+        event.repeat ||
+        modalOpen ||
         event.ctrlKey ||
         event.metaKey ||
         event.altKey ||
@@ -156,11 +237,11 @@ function StudySession({ subjectId, create }: Props) {
         return;
       if (event.key === "ArrowLeft") {
         event.preventDefault();
-        move(-1);
+        rate(false);
       }
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        move(1);
+        rate(true);
       }
       // Focused controls retain native Space/Enter activation.
       if (
@@ -247,6 +328,7 @@ function StudySession({ subjectId, create }: Props) {
         front: front.slice(0, 500),
         back: backText.slice(0, 2000),
         subjectId,
+        category: category === "__none" ? "" : category,
         known: false,
       });
     }
@@ -343,7 +425,7 @@ function StudySession({ subjectId, create }: Props) {
                       className="button primary"
                       onClick={() => restart(missed)}
                     >
-                      Noch einmal üben ({missed.length})
+                      Nicht gewusste Karten nochmals lernen ({missed.length})
                     </button>
                   )}
                   <button className="button" onClick={() => restart()}>
@@ -528,7 +610,7 @@ function StudySession({ subjectId, create }: Props) {
                     rate(false);
                   }}
                 >
-                  <X size={19} /> Noch üben <kbd>1</kbd>
+                  <X size={19} /> Nicht gewusst <kbd>←</kbd>
                 </button>
                 <button
                   className={styles.knowButton}
@@ -537,12 +619,12 @@ function StudySession({ subjectId, create }: Props) {
                     rate(true);
                   }}
                 >
-                  <Check size={19} /> Gewusst <kbd>2</kbd>
+                  <Check size={19} /> Gewusst <kbd>→</kbd>
                 </button>
               </div>
             )}
             <p className={styles.keyboardHint}>
-              ← → Blättern <span>·</span> Leertaste Umdrehen{" "}
+              ← Nicht gewusst · → Gewusst <span>·</span> Leertaste Umdrehen{" "}
               {sorting && (
                 <>
                   <span>·</span> Am Handy zum Bewerten wischen
@@ -568,7 +650,14 @@ function StudySession({ subjectId, create }: Props) {
               {cards.map((c, i) => (
                 <article className={styles.listRow} key={c.id}>
                   <span className={styles.number}>{i + 1}</span>
-                  <p>{c.front}</p>
+                  <p>
+                    {c.front}
+                    {c.category && (
+                      <small className={styles.categoryLabel}>
+                        {c.category}
+                      </small>
+                    )}
+                  </p>
                   <p>{c.back}</p>
                   <div className={styles.rowTools}>
                     {c.known && (
@@ -584,13 +673,6 @@ function StudySession({ subjectId, create }: Props) {
                       onClick={() => setEditing({ ...c })}
                     >
                       <Pencil size={15} />
-                    </button>
-                    <button
-                      className="icon-button"
-                      aria-label={`Karte ${i + 1} löschen`}
-                      onClick={() => remove(c)}
-                    >
-                      <Trash2 size={15} />
                     </button>
                   </div>
                 </article>
@@ -730,6 +812,8 @@ function StudySession({ subjectId, create }: Props) {
                     ? {
                         ...c,
                         front: editing.front.trim(),
+                        category: editing.category?.trim() || "",
+                        subjectId: editing.subjectId,
                         back: editing.back.trim(),
                         known: false,
                         updatedAt: new Date().toISOString(),
@@ -742,6 +826,17 @@ function StudySession({ subjectId, create }: Props) {
                 delete next[editing.id];
                 return next;
               });
+              if (
+                editing.subjectId !==
+                  latest.flashcards.find((c) => c.id === editing.id)
+                    ?.subjectId ||
+                (editing.category || "") !==
+                  (latest.flashcards.find((c) => c.id === editing.id)
+                    ?.category || "")
+              ) {
+                setRoundIds(null);
+                setIndex(0);
+              }
               setEditing(null);
               setFlipped(false);
               stopAudio();
@@ -773,9 +868,64 @@ function StudySession({ subjectId, create }: Props) {
                 }
               />
             </div>
+            <label>
+              Kategorie
+              <input
+                maxLength={80}
+                aria-label="Kategorie"
+                list="edit-categories"
+                value={editing.category ?? ""}
+                onChange={(event) =>
+                  setEditing({ ...editing, category: event.target.value })
+                }
+              />
+              <datalist id="edit-categories">
+                {[
+                  ...new Set([
+                    ...(w.flashcardCategories ?? []),
+                    ...w.flashcards.flatMap((c) =>
+                      c.category ? [c.category] : [],
+                    ),
+                  ]),
+                ].map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+            </label>
+            <label>
+              Fach
+              <select
+                value={editing.subjectId ?? ""}
+                onChange={(event) =>
+                  setEditing({
+                    ...editing,
+                    subjectId: event.target.value || null,
+                  })
+                }
+              >
+                <option value="">Inbox · Ohne Fach</option>
+                {w.subjects.map((subject) => (
+                  <option key={subject.id} value={subject.id}>
+                    {subject.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button className="button primary" type="submit">
               Änderungen speichern
             </button>
+            <div className={styles.deleteZone}>
+              <p>Diese Karte endgültig entfernen</p>
+              <button
+                className="button"
+                type="button"
+                onClick={() => {
+                  if (remove(editing)) setEditing(null);
+                }}
+              >
+                <Trash2 size={16} /> Lernkarte löschen
+              </button>
+            </div>
           </form>
         </Modal>
       )}

@@ -1,4 +1,5 @@
 "use client";
+import { SubjectSelect } from "@/components/subject-select";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -56,6 +57,7 @@ export function NoteEditor({
       <div className="document-top">
         <span className="eyebrow">NOTIZ · LOKAL GESPEICHERT</span>
         <div className="toolbar">
+          <SubjectSelect kind="notes" id={id} />
           <button
             title="Als Text exportieren"
             onClick={() =>

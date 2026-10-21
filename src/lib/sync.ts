@@ -49,7 +49,6 @@ async function pushAll(userId: string): Promise<void> {
 
   if (tombstones.length) {
     const tables = [
-      "subjects",
       "notes",
       "canvases",
       "files",
@@ -67,7 +66,6 @@ async function pushAll(userId: string): Promise<void> {
         .in("id", tombstones);
       if (error) throw new Error(`Löschen fehlgeschlagen (${table}).`);
     }
-    useWorkspace.setState({ deletedIds: [] });
   }
 
   const updated = nowIso();
@@ -229,6 +227,7 @@ async function pushAll(userId: string): Promise<void> {
         front: c.front,
         back: c.back,
         known: c.known,
+        category: c.category || "",
         created_at: c.createdAt,
         updated_at: updated,
       })),
@@ -279,6 +278,20 @@ async function pushAll(userId: string): Promise<void> {
     );
     if (msgError)
       throw new Error("Chatverlauf konnte nicht gespeichert werden.");
+  }
+
+  if (tombstones.length) {
+    // Save moves first: subject foreign keys deliberately restrict deletion.
+    // Detach remaining references from other devices without deleting contents.
+    for (const table of ["notes", "canvases", "files", "tasks", "exams", "lessons", "flashcards", "ai_chats"]) {
+      const { error } = await sb.from(table).update({ subject_id: null })
+        .eq("user_id", userId).in("subject_id", tombstones);
+      if (error) throw new Error(`Fachzuordnung konnte nicht aktualisiert werden (${table}).`);
+    }
+    const { error } = await sb.from("subjects").delete().eq("user_id", userId).in("id", tombstones);
+    if (error) throw new Error("Fächer konnten nicht gelöscht werden.");
+    const deleted = new Set(tombstones);
+    useWorkspace.setState({ deletedIds: useWorkspace.getState().deletedIds.filter(id => !deleted.has(id)) });
   }
 }
 
@@ -459,6 +472,7 @@ async function pullAll(userId: string): Promise<void> {
     back: str(r.back),
     subjectId: safeSubject(r.subject_id),
     known: r.known === true,
+    category: str(r.category),
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),
   }));

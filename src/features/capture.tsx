@@ -15,11 +15,13 @@ const labels: Record<CaptureKind, string> = {
 };
 export function Capture({
   kind,
+  category = "",
   subjectId,
   close,
   created,
 }: {
   kind: CaptureKind;
+  category?: string;
   subjectId: string | null;
   close: () => void;
   created: (id: string) => void;
@@ -99,6 +101,7 @@ export function Capture({
                   back: String(data.get("details")),
                   subjectId: sid,
                   known: false,
+                  category: String(data.get("category") || "").trim(),
                 },
               ],
             });
@@ -161,6 +164,33 @@ export function Capture({
           <label>
             {kind === "exam" ? "Themen" : "Antwort"}
             <textarea name="details" required rows={4} />
+          </label>
+        )}
+        {kind === "flashcard" && (
+          <label>
+            Kategorie
+            <input
+              defaultValue={category}
+              aria-label="Kategorie"
+              name="category"
+              maxLength={80}
+              list="capture-categories"
+              placeholder="Ohne Kategorie"
+            />
+            <datalist id="capture-categories">
+              {[
+                ...new Set([
+                  ...(w.flashcardCategories ?? []),
+                  ...w.flashcards.flatMap((c) =>
+                    c.category ? [c.category] : [],
+                  ),
+                ]),
+              ]
+                .sort()
+                .map((name) => (
+                  <option key={name} value={name} />
+                ))}
+            </datalist>
           </label>
         )}
         {kind === "subject" && (
