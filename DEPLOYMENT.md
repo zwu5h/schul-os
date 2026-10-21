@@ -1,5 +1,28 @@
 # School OS auf Oracle Cloud
 
+## Karteikarten-Kategorien veröffentlicht am 21. Oktober 2026
+
+Die bereits im Repository implementierte Lernkartenansicht mit Kategorie-Filter,
+Kartenbearbeitung und Kategorie beim Erfassen wurde auf dem bestehenden
+Oracle-Quellstand veröffentlicht. Dazu gehören `learn.tsx`, `learn.module.css`,
+`capture.tsx`, die Weiterleitung aus `organization.tsx`, die Übergabe der
+gewählten Kategorie aus `school-app.tsx`, Typen sowie die Erweiterung der
+Lernmaterial-API und des Clients für `category` und `flashcardCategories`.
+Die übrigen lokalen UI-Änderungen wurden dabei nicht mit ausgerollt.
+
+Linux-Produktionsbuild (`--webpack`), Typprüfung, gezieltes Lint und der
+API-Test für kategorisierte Lernmaterialien waren erfolgreich. Die bestehende
+Spanisch-Sammlung des angefragten Kontos wurde in einer kontobezogenen
+Transaktion kategorisiert: 115 Karten in 14 Kategorien. Texte, IDs,
+Fachzuordnung und Lernstatus blieben erhalten. Im Browser wurden alle 14
+Filteroptionen, 12 Karten unter „Kindheit & Erinnerungen“, keine Karten ohne
+Kategorie und die unveränderte Gesamtzahl 115 geprüft.
+
+Sicherungen: Image `school-os-app:before-spanish-categories-20261021`,
+Quellarchiv `/home/ubuntu/school-os-before-spanish-categories-20261021.tar.gz`,
+SQLite-Backups `/app/data/auth-before-categories-deploy-20261021.sqlite`
+und `/app/data/auth-before-spanish-categories-20261021.sqlite`.
+
 ## Synchronisierung von Notizen und Lernkarten
 
 Am 21. Oktober 2026 auf `https://os.digmio.app` veröffentlicht. Verwendet wurde
