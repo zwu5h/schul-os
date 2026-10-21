@@ -2,6 +2,19 @@
 
 ## Synchronisierung von Notizen und Lernkarten
 
+Am 21. Oktober 2026 auf `https://os.digmio.app` veröffentlicht. Verwendet wurde
+der bisherige Oracle-Quellstand mit den unten genannten Ergänzungen, damit andere
+lokale Weiterentwicklungen nicht versehentlich mit veröffentlicht werden. Der
+Linux-Standalone-Build mit Next.js 16.3.6 (`--webpack`), Typprüfung, gezieltes Lint
+und die API-Prüfungen waren erfolgreich. Nach Neuladen der bestehenden Sitzung
+bestätigte die App den Abgleich; eine anschließende kontobezogene, nur lesende
+SQLite-Abfrage bestätigte 6 Notizen und 115 Lernkarten auf dem Server.
+
+Rollback-Sicherungen: Image `school-os-app:before-study-sync-20261020`,
+Quellarchiv `/home/ubuntu/school-os-before-study-sync-20261020.tar.gz` und
+konsistentes SQLite-Backup `/app/data/auth-before-study-sync-20261020.sqlite`
+im bestehenden Daten-Volume. Auth-Konfiguration und Volumes wurden beibehalten.
+
 Die bestehende Better-Auth-Sitzung wird auch für `/api/study-materials` verwendet.
 Notizen und Lernkarten liegen in `synced_study_materials` im bestehenden
 persistenten SQLite-Volume. Der Benutzer wird ausschließlich aus der Sitzung
