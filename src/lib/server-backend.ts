@@ -26,7 +26,7 @@ export async function proxyBackendRequest(request: Request, origin = backendOrig
     return Response.json({ error: "Anfrage abgelehnt." }, { status: 403 });
   const source = new URL(request.url);
   if (!(source.pathname.startsWith("/api/auth/") ||
-        source.pathname === "/api/subjects" || source.pathname === "/api/chat"))
+        source.pathname === "/api/subjects" || source.pathname === "/api/study-materials" || source.pathname === "/api/chat"))
     return Response.json({ error: "Anfrage abgelehnt." }, { status: 404 });
   if (Number(request.headers.get("content-length") || 0) > 4_000_000)
     return Response.json({ error: "Die Anfrage ist zu groß." }, { status: 413 });

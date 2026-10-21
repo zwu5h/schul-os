@@ -7,8 +7,11 @@ function subject(name: string) {
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
 }
 
+let signupCount = 0;
 async function signup(request: APIRequestContext) {
   const response = await request.post("/api/auth/sign-up/email", {
+    // Independent simulated clients must not share the signup IP rate limit.
+    headers: { "x-real-ip": `192.0.2.${++signupCount}` },
     data: { email: `sync-${randomUUID()}@example.test`, password: "subject-test-password-123", name: "Sync Test" },
   });
   expect(response.ok()).toBeTruthy();
@@ -80,5 +83,43 @@ test("subject sync requires authentication and isolates accounts; stale copies c
     expect((await (await sync(b, [])).json()).subjects[0].name).toBe("Privates Fach");
     expect((await a.post("/api/subjects", { headers: { origin: "https://evil.example" }, data: { subjects: [], deletedIds: [] } })).status()).toBe(403);
     expect((await a.post("/api/subjects", { data: { subjects: [{ ...original, id: "invalid" }], deletedIds: [] } })).status()).toBe(400);
+  } finally { await a.dispose(); await b.dispose(); await guest.dispose(); }
+});
+
+test("study materials persist across sessions and remain private; edits and deletions survive stale uploads", async ({ playwright, baseURL }) => {
+  const a = await playwright.request.newContext({ baseURL });
+  const b = await playwright.request.newContext({ baseURL });
+  const guest = await playwright.request.newContext({ baseURL });
+  const stamp = new Date().toISOString();
+  const note = { id: randomUUID(), subjectId: null, title: "Spanisch", content: "<p>he hablado</p>", createdAt: stamp, updatedAt: stamp };
+  const card = { id: randomUUID(), subjectId: null, front: "die Kindheit", back: "la infancia", known: false, createdAt: stamp, updatedAt: stamp };
+  const empty = { notes: [], flashcards: [], deletedIds: [] };
+  try {
+    expect((await guest.post("/api/study-materials", { data: empty })).status()).toBe(401);
+    await signup(a); await signup(b);
+    expect((await a.post("/api/study-materials", { data: { ...empty, notes: [note], flashcards: [card] } })).ok()).toBeTruthy();
+    const secondDevice = await playwright.request.newContext({ baseURL, storageState: await a.storageState() });
+    try {
+      const pulled = await (await secondDevice.post("/api/study-materials", { data: empty })).json();
+      expect(pulled.notes).toEqual([note]);
+      expect(pulled.flashcards).toEqual([card]);
+      expect((await (await b.post("/api/study-materials", { data: empty })).json()).notes).toEqual([]);
+      const privateCopy = { ...note, content: "<p>Anderes Konto</p>" };
+      await b.post("/api/study-materials", { data: { ...empty, notes: [privateCopy] } });
+      const edited = { ...note, title: "Neu", updatedAt: new Date(Date.now() + 1000).toISOString() };
+      const learned = { ...card, known: true, updatedAt: edited.updatedAt };
+      await secondDevice.post("/api/study-materials", { data: { ...empty, notes: [edited], flashcards: [learned] } });
+      const afterStale = await (await a.post("/api/study-materials", { data: { ...empty, notes: [note], flashcards: [card] } })).json();
+      expect(afterStale.notes).toEqual([edited]);
+      expect(afterStale.flashcards).toEqual([learned]);
+      await secondDevice.post("/api/study-materials", { data: { ...empty, deletedIds: [note.id, card.id] } });
+      const afterDeletion = await (await a.post("/api/study-materials", { data: { ...empty, notes: [edited], flashcards: [learned] } })).json();
+      expect(afterDeletion.notes).toEqual([]);
+      expect(afterDeletion.flashcards).toEqual([]);
+      expect(afterDeletion.deletedIds).toEqual(expect.arrayContaining([note.id, card.id]));
+      expect((await (await b.post("/api/study-materials", { data: empty })).json()).notes).toEqual([privateCopy]);
+      expect((await a.post("/api/study-materials", { headers: { origin: "https://evil.example" }, data: empty })).status()).toBe(403);
+      expect((await a.post("/api/study-materials", { data: { ...empty, notes: [{ ...note, id: "invalid" }] } })).status()).toBe(400);
+    } finally { await secondDevice.dispose(); }
   } finally { await a.dispose(); await b.dispose(); await guest.dispose(); }
 });

@@ -25,14 +25,14 @@ function Account() {
             : "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an."}
         </p>
         <p className="muted">
-          Deine Fächer werden über deinen Account automatisch zwischen Geräten
-          synchronisiert. Notizen, Whiteboards und Dateien werden in diesem
-          Browser gespeichert. Nutze „Daten & Sicherung“, um sie zu exportieren.
+          Fächer, Notizen und Lernkarten werden über deinen Account automatisch
+          mit dem Server und deinen Geräten synchronisiert. Whiteboards und
+          Dateien bleiben in diesem Browser. Nutze dafür „Daten & Sicherung“.
         </p>
         <p className="muted" role="status">
           {subjectSync.lastSync
-            ? `Fächer zuletzt synchronisiert: ${new Date(subjectSync.lastSync).toLocaleString("de-AT")}`
-            : "Fächer werden synchronisiert …"}
+            ? `Fächer, Notizen und Lernkarten zuletzt synchronisiert: ${new Date(subjectSync.lastSync).toLocaleString("de-AT")}`
+            : "Fächer, Notizen und Lernkarten werden synchronisiert …"}
         </p>
         <button className="button" disabled={subjectSync.running} onClick={() => void subjectSync.syncNow()}>
           {subjectSync.running ? "Synchronisiert …" : "Jetzt synchronisieren"}
@@ -177,7 +177,7 @@ export function Settings() {
           liegen in IndexedDB.{" "}
           {authUser
             ? "Cloud verbunden: Änderungen werden automatisch synchronisiert."
-            : "Fächer werden über deinen Account synchronisiert. Die übrigen Inhalte bleiben lokal in diesem Browser."}
+            : "Fächer, Notizen und Lernkarten werden über deinen Account synchronisiert. Die übrigen Inhalte bleiben lokal in diesem Browser."}
         </p>
         <button
           className="button"

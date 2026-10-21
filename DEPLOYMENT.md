@@ -1,5 +1,30 @@
 # School OS auf Oracle Cloud
 
+## Synchronisierung von Notizen und Lernkarten
+
+Die bestehende Better-Auth-Sitzung wird auch für `/api/study-materials` verwendet.
+Notizen und Lernkarten liegen in `synced_study_materials` im bestehenden
+persistenten SQLite-Volume. Der Benutzer wird ausschließlich aus der Sitzung
+bestimmt; jede Abfrage und Änderung ist auf diese Benutzer-ID beschränkt.
+Neuere Zeitstempel gewinnen; Löschmarkierungen verhindern das Wiederherstellen
+durch alte Gerätekopien. Der Client synchronisiert beim Start, bei Änderungen,
+bei Fokus/erneuter Verbindung sowie alle zehn Sekunden im sichtbaren Tab.
+Die Einstellung „Jetzt synchronisieren“ wartet auf Fächer und Lernmaterialien;
+Fehler lassen die lokale Kopie bestehen. Whiteboards, Dateien, Aufgaben und das
+Profil bleiben bei Verwendung dieser Better-Auth-Anbindung weiterhin lokal.
+
+Die API-Prüfungen in `tests/subject-sync.spec.ts` decken Anmeldung, getrennte
+Konten, Abruf über eine zweite Sitzung, neuere Änderungen, Lernstatus und
+Löschungen trotz alter Uploads sowie Origin- und Eingabeprüfung ab. Ausführen:
+`npx playwright test --config playwright.subject-sync.config.ts --grep 'requires authentication|study materials'`.
+
+Ein Server-Update benötigt die neue Route, `study-materials-schema.ts`,
+`subject-sync.ts`, `server-backend.ts` und die Sync-Hinweise in `settings.tsx`
+sowie einen dazu passenden Linux-Standalone-Build. Bestehende Auth-Secrets und
+Daten-Volumes beibehalten. Vorher ein konsistentes SQLite-Backup und das bisherige
+Docker-Image sichern. Nach dem Update die angemeldete App neu laden und den
+erfolgreichen Abgleich in „Konto & Cloud“ sowie die gespeicherten Datensätze prüfen.
+
 ## Vercel und GitHub
 
 Die Vercel-Version verwendet unter `VERCEL=1` den bestehenden Server

@@ -28,7 +28,7 @@ npm run dev
 - Suche/Navigation mit Ctrl/Cmd+K, Quick Capture, Light/Dark Mode
 - Vollständiger JSON-Backup-Export inklusive Canvas und Dateiinhalten
 - Responsive Oberfläche und lokale Speicherung nach Neuladen
-- Fächer-Synchronisierung zwischen Geräten über den bestehenden School-OS-Account, inklusive Übernahme vorhandener lokaler Fächer
+- Synchronisierung von Fächern, Notizen und Lernkarten zwischen Geräten über den bestehenden School-OS-Account, inklusive Übernahme vorhandener lokaler Inhalte
 
 ## Groq
 

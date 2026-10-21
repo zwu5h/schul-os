@@ -3,6 +3,16 @@
 import { create } from "zustand";
 import { useWorkspace } from "./store";
 import type { Subject } from "@/types/school";
+import { studyMaterialsSchema } from "./study-materials-schema";
+
+function mergeItems<T extends { id: string; updatedAt: string }>(local: T[], remote: T[], deleted: Set<string>): T[] {
+  const items = new Map(remote.map(item => [item.id, item]));
+  for (const item of local) {
+    const other = items.get(item.id);
+    if (!other || Date.parse(item.updatedAt) > Date.parse(other.updatedAt)) items.set(item.id, item);
+  }
+  return [...items.values()].filter(item => !deleted.has(item.id));
+}
 
 export const useSubjectSync = create<{
   running: boolean;
@@ -40,12 +50,23 @@ export function initSubjectSync(): () => void {
         signal: abort.signal,
       });
       if (!response.ok) throw new Error(response.status === 401
-        ? "Bitte erneut anmelden, um deine Fächer zu synchronisieren."
+        ? "Bitte erneut anmelden, um deine Lernmaterialien zu synchronisieren."
         : "Fächer konnten nicht synchronisiert werden. Deine Änderungen bleiben lokal gespeichert.");
       const remote = await response.json() as { subjects: Subject[]; deletedIds: string[] };
+      const studyResponse = await fetch("/api/study-materials", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: snapshot.notes, flashcards: snapshot.flashcards, deletedIds: snapshot.deletedIds }),
+        signal: abort.signal,
+      });
+      if (!studyResponse.ok) throw new Error(studyResponse.status === 401
+        ? "Bitte erneut anmelden, um deine Lernmaterialien zu synchronisieren."
+        : "Notizen und Lernkarten konnten nicht synchronisiert werden. Deine lokale Kopie bleibt gespeichert.");
+      const study = studyMaterialsSchema.parse(await studyResponse.json());
       if (!active) return;
       const latest = useWorkspace.getState();
-      const deleted = new Set([...latest.deletedIds, ...remote.deletedIds]);
+      const deleted = new Set([...latest.deletedIds, ...remote.deletedIds, ...study.deletedIds]);
       const subjects = new Map(remote.subjects.map(subject => [subject.id, subject]));
       for (const local of latest.subjects) {
         const other = subjects.get(local.id);
@@ -53,9 +74,15 @@ export function initSubjectSync(): () => void {
       }
       for (const id of deleted) subjects.delete(id);
       const merged = [...subjects.values()];
+      const notes = mergeItems(latest.notes, study.notes, deleted);
+      const flashcards = mergeItems(latest.flashcards, study.flashcards, deleted);
+      const onboarded = latest.onboarded || study.notes.length > 0 || study.flashcards.length > 0;
       applying = true;
-      if (JSON.stringify(merged) !== JSON.stringify(latest.subjects) || deleted.size !== latest.deletedIds.length) {
-        latest.patch({ subjects: merged, deletedIds: [...deleted] });
+      if (JSON.stringify(merged) !== JSON.stringify(latest.subjects) ||
+          JSON.stringify(notes) !== JSON.stringify(latest.notes) ||
+          JSON.stringify(flashcards) !== JSON.stringify(latest.flashcards) ||
+          deleted.size !== latest.deletedIds.length || onboarded !== latest.onboarded) {
+        latest.patch({ subjects: merged, notes, flashcards, onboarded, deletedIds: [...deleted] });
       }
       applying = false;
       useSubjectSync.setState({ lastSync: new Date().toISOString(), error: null });
@@ -71,7 +98,8 @@ export function initSubjectSync(): () => void {
   };
   useSubjectSync.setState({ running: false, lastSync: null, error: null, syncNow: sync });
   const unsubscribe = useWorkspace.subscribe((state, previous) => {
-    if (!applying && (state.subjects !== previous.subjects || state.deletedIds !== previous.deletedIds || state.ready !== previous.ready)) schedule();
+    if (!applying && (state.subjects !== previous.subjects || state.notes !== previous.notes ||
+        state.flashcards !== previous.flashcards || state.deletedIds !== previous.deletedIds || state.ready !== previous.ready)) schedule();
   });
   const refresh = () => { if (document.visibilityState === "visible") void sync(); };
   window.addEventListener("online", refresh);
